@@ -10,17 +10,17 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-/**
- * Department master (org / functional unit). Separate table from geographic boundaries;
- * does not use {@link BoundaryNamedLgdBase}.
- */
 @Entity
-@Table(name = "master_department")
-public class Department {
+@Table(name = "master_office_type")
+public class OfficeType {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "department_id", nullable = false)
+    private Department department;
 
     @Column(nullable = false, length = 255)
     private String name;
@@ -28,12 +28,11 @@ public class Department {
     @Column(name = "local_name", length = 512)
     private String localName;
 
-    @Column(name = "lgd_code", length = 64)
-    private String lgdCode;
+    @Column(name = "short_name", length = 64)
+    private String shortName;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "state_id", nullable = false)
-    private State state;
+    @Column(name = "short_name_local", length = 128)
+    private String shortNameLocal;
 
     public Long getId() {
         return id;
@@ -41,6 +40,14 @@ public class Department {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Department getDepartment() {
+        return department;
+    }
+
+    public void setDepartment(Department department) {
+        this.department = department;
     }
 
     public String getName() {
@@ -59,19 +66,20 @@ public class Department {
         this.localName = localName;
     }
 
-    public String getLgdCode() {
-        return lgdCode;
+    public String getShortName() {
+        return shortName;
     }
 
-    public void setLgdCode(String lgdCode) {
-        this.lgdCode = lgdCode;
+    public void setShortName(String shortName) {
+        this.shortName = shortName;
     }
 
-    public State getState() {
-        return state;
+    public String getShortNameLocal() {
+        return shortNameLocal;
     }
 
-    public void setState(State state) {
-        this.state = state;
+    public void setShortNameLocal(String shortNameLocal) {
+        this.shortNameLocal = shortNameLocal;
     }
 }
+

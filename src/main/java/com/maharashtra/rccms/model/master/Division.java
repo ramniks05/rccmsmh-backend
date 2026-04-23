@@ -10,7 +10,7 @@ import jakarta.persistence.Table;
  * Revenue / administrative division under a state (parallel to district path where applicable).
  */
 @Entity
-@Table(name = "adm_division")
+@Table(name = "master_division")
 public class Division extends BoundaryNamedLgdBase {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

@@ -7,7 +7,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "adm_village")
+@Table(name = "master_village")
 public class Village extends BoundaryNamedLgdBase {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

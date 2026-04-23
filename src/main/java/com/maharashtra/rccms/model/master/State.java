@@ -8,6 +8,6 @@ import jakarta.persistence.Table;
  * Not linked to {@link Department}; department is a separate master.
  */
 @Entity
-@Table(name = "adm_state")
+@Table(name = "master_state")
 public class State extends BoundaryNamedLgdBase {
 }

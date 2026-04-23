@@ -2,9 +2,12 @@ package com.maharashtra.rccms.model.master;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
@@ -23,6 +26,10 @@ public class Subject {
 
     @Column(name = "subject_name_local", length = 1024)
     private String subjectNameLocal;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "department_id", nullable = false)
+    private Department department;
 
     public Long getId() {
         return id;
@@ -54,6 +61,14 @@ public class Subject {
 
     public void setSubjectNameLocal(String subjectNameLocal) {
         this.subjectNameLocal = subjectNameLocal;
+    }
+
+    public Department getDepartment() {
+        return department;
+    }
+
+    public void setDepartment(Department department) {
+        this.department = department;
     }
 }
 

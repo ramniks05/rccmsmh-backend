@@ -1,9 +1,18 @@
 package com.maharashtra.rccms.dto;
 
 public class SubjectUpdateRequest {
+    private Long departmentId;
     private String subjectCode;
     private String subjectName;
     private String subjectNameLocal;
+
+    public Long getDepartmentId() {
+        return departmentId;
+    }
+
+    public void setDepartmentId(Long departmentId) {
+        this.departmentId = departmentId;
+    }
 
     public String getSubjectCode() {
         return subjectCode;

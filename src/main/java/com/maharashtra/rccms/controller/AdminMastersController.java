@@ -168,8 +168,13 @@ public class AdminMastersController {
     @PostMapping("/subjects")
     public ResponseEntity<?> createSubject(@RequestBody SubjectCreateRequest request) {
         try {
+            Long departmentId = request.getDepartmentId();
+            if (departmentId == null) throw new IllegalArgumentException("departmentId is required");
+            Department department = departmentRepository.findById(departmentId)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid departmentId"));
+
             Subject subject = new Subject();
-            applySubjectFields(subject, request.getSubjectCode(), request.getSubjectName(), request.getSubjectNameLocal());
+            applySubjectFields(subject, department, request.getSubjectCode(), request.getSubjectName(), request.getSubjectNameLocal());
             subject = subjectRepository.save(subject);
             return ResponseEntity.status(HttpStatus.CREATED).body(toSubjectResponse(subject));
         } catch (IllegalArgumentException ex) {
@@ -178,8 +183,9 @@ public class AdminMastersController {
     }
 
     @GetMapping("/subjects")
-    public ResponseEntity<?> listSubjects() {
+    public ResponseEntity<?> listSubjects(@RequestParam(name = "departmentId", required = false) Long departmentId) {
         List<SubjectResponse> items = subjectRepository.findAll().stream()
+                .filter(s -> departmentId == null || (s.getDepartment() != null && departmentId.equals(s.getDepartment().getId())))
                 .map(AdminMastersController::toSubjectResponse)
                 .toList();
         return ResponseEntity.ok(items);
@@ -190,7 +196,13 @@ public class AdminMastersController {
         try {
             Long subjectId = id;
             Subject subject = subjectRepository.findById(subjectId).orElseThrow(() -> new IllegalArgumentException("Invalid subject id"));
-            applySubjectFields(subject, request.getSubjectCode(), request.getSubjectName(), request.getSubjectNameLocal());
+
+            Long departmentId = request.getDepartmentId();
+            if (departmentId == null) throw new IllegalArgumentException("departmentId is required");
+            Department department = departmentRepository.findById(departmentId)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid departmentId"));
+
+            applySubjectFields(subject, department, request.getSubjectCode(), request.getSubjectName(), request.getSubjectNameLocal());
             subject = subjectRepository.save(subject);
             return ResponseEntity.ok(toSubjectResponse(subject));
         } catch (IllegalArgumentException ex) {
@@ -696,19 +708,28 @@ public class AdminMastersController {
     }
 
     private static void applySubjectFields(Subject subject,
+                                          Department department,
                                           String subjectCode,
                                           String subjectName,
                                           String subjectNameLocal) {
         if (subjectCode == null || subjectCode.trim().isEmpty()) throw new IllegalArgumentException("subjectCode is required");
         if (subjectName == null || subjectName.trim().isEmpty()) throw new IllegalArgumentException("subjectName is required");
+        subject.setDepartment(department);
         subject.setSubjectCode(subjectCode.trim());
         subject.setSubjectName(subjectName.trim());
         subject.setSubjectNameLocal(subjectNameLocal);
     }
 
     private static SubjectResponse toSubjectResponse(Subject subject) {
+        Department department = subject.getDepartment();
+        Long departmentId = department == null ? null : department.getId();
+        String departmentName = department == null ? null : department.getName();
+        String departmentLocalName = department == null ? null : department.getLocalName();
         return new SubjectResponse(
                 subject.getId(),
+                departmentId,
+                departmentName,
+                departmentLocalName,
                 subject.getSubjectCode(),
                 subject.getSubjectName(),
                 subject.getSubjectNameLocal()

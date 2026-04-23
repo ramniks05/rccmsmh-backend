@@ -18,6 +18,9 @@ import com.maharashtra.rccms.dto.SectionUpdateRequest;
 import com.maharashtra.rccms.dto.SubjectCreateRequest;
 import com.maharashtra.rccms.dto.SubjectResponse;
 import com.maharashtra.rccms.dto.SubjectUpdateRequest;
+import com.maharashtra.rccms.dto.OfficeCreateRequest;
+import com.maharashtra.rccms.dto.OfficeResponse;
+import com.maharashtra.rccms.dto.OfficeUpdateRequest;
 import com.maharashtra.rccms.dto.OfficeTypeCreateRequest;
 import com.maharashtra.rccms.dto.OfficeTypeResponse;
 import com.maharashtra.rccms.dto.OfficeTypeUpdateRequest;
@@ -26,6 +29,7 @@ import com.maharashtra.rccms.model.master.Act;
 import com.maharashtra.rccms.model.master.Department;
 import com.maharashtra.rccms.model.master.Section;
 import com.maharashtra.rccms.model.master.Subject;
+import com.maharashtra.rccms.model.master.Office;
 import com.maharashtra.rccms.model.master.OfficeType;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.Division;
@@ -37,6 +41,7 @@ import com.maharashtra.rccms.repository.ActRepository;
 import com.maharashtra.rccms.repository.DepartmentRepository;
 import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.DivisionRepository;
+import com.maharashtra.rccms.repository.OfficeRepository;
 import com.maharashtra.rccms.repository.OfficeTypeRepository;
 import com.maharashtra.rccms.repository.SectionRepository;
 import com.maharashtra.rccms.repository.StateRepository;
@@ -68,6 +73,7 @@ public class AdminMastersController {
     private final SectionRepository sectionRepository;
     private final SubjectRepository subjectRepository;
     private final DepartmentRepository departmentRepository;
+    private final OfficeRepository officeRepository;
     private final OfficeTypeRepository officeTypeRepository;
     private final StateRepository stateRepository;
     private final DivisionRepository divisionRepository;
@@ -81,6 +87,7 @@ public class AdminMastersController {
             SectionRepository sectionRepository,
             SubjectRepository subjectRepository,
             DepartmentRepository departmentRepository,
+            OfficeRepository officeRepository,
             OfficeTypeRepository officeTypeRepository,
             StateRepository stateRepository,
             DivisionRepository divisionRepository,
@@ -93,6 +100,7 @@ public class AdminMastersController {
         this.sectionRepository = sectionRepository;
         this.subjectRepository = subjectRepository;
         this.departmentRepository = departmentRepository;
+        this.officeRepository = officeRepository;
         this.officeTypeRepository = officeTypeRepository;
         this.stateRepository = stateRepository;
         this.divisionRepository = divisionRepository;
@@ -118,6 +126,78 @@ public class AdminMastersController {
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
+    }
+
+    @PostMapping("/offices")
+    public ResponseEntity<?> createOffice(@RequestBody OfficeCreateRequest request) {
+        try {
+            Department department = requireDepartment(request.getDepartmentId());
+            OfficeType officeType = requireOfficeType(request.getOfficeTypeId());
+            validateLocation(request.getLevel(), request.getLocationId());
+
+            Office office = new Office();
+            office.setDepartment(department);
+            office.setOfficeType(officeType);
+            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getLocalName(),
+                    request.getShortName(), request.getShortNameLocal());
+            office = officeRepository.save(office);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toOfficeResponse(office));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/offices")
+    public ResponseEntity<?> listOffices(
+            @RequestParam(name = "departmentId", required = false) Long departmentId,
+            @RequestParam(name = "officeTypeId", required = false) Long officeTypeId,
+            @RequestParam(name = "level", required = false) String level,
+            @RequestParam(name = "locationId", required = false) Long locationId
+    ) {
+        List<OfficeResponse> items = officeRepository.findAll().stream()
+                .filter(o -> departmentId == null || (o.getDepartment() != null && departmentId.equals(o.getDepartment().getId())))
+                .filter(o -> officeTypeId == null || (o.getOfficeType() != null && officeTypeId.equals(o.getOfficeType().getId())))
+                .filter(o -> level == null || (o.getLevel() != null && level.equalsIgnoreCase(o.getLevel())))
+                .filter(o -> locationId == null || (o.getLocationId() != null && locationId.equals(o.getLocationId())))
+                .map(this::toOfficeResponse)
+                .toList();
+        return ResponseEntity.ok(items);
+    }
+
+    @PutMapping("/offices/{id}")
+    public ResponseEntity<?> updateOffice(@PathVariable("id") Long id, @RequestBody OfficeUpdateRequest request) {
+        try {
+            Long officeId = id;
+            Office office = officeRepository.findById(officeId).orElseThrow(() -> new IllegalArgumentException("Invalid office id"));
+
+            Department department = requireDepartment(request.getDepartmentId());
+            OfficeType officeType = requireOfficeType(request.getOfficeTypeId());
+            validateLocation(request.getLevel(), request.getLocationId());
+
+            office.setDepartment(department);
+            office.setOfficeType(officeType);
+            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getLocalName(),
+                    request.getShortName(), request.getShortNameLocal());
+            office = officeRepository.save(office);
+            return ResponseEntity.ok(toOfficeResponse(office));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/offices/{id}")
+    public ResponseEntity<?> deleteOffice(@PathVariable("id") Long id) {
+        Long officeId = id;
+        if (!officeRepository.existsById(officeId)) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("error", "Invalid office id");
+            return ResponseEntity.badRequest().body(body);
+        }
+        officeRepository.deleteById(officeId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("deleted", true);
+        body.put("id", officeId);
+        return ResponseEntity.ok(body);
     }
 
     @GetMapping("/office-types")
@@ -734,6 +814,82 @@ public class AdminMastersController {
                 subject.getSubjectName(),
                 subject.getSubjectNameLocal()
         );
+    }
+
+    private static void applyOfficeFields(Office office,
+                                          String level,
+                                          Long locationId,
+                                          String name,
+                                          String localName,
+                                          String shortName,
+                                          String shortNameLocal) {
+        if (level == null || level.trim().isEmpty()) throw new IllegalArgumentException("level is required");
+        if (locationId == null) throw new IllegalArgumentException("locationId is required");
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("name is required");
+        office.setLevel(level.trim().toUpperCase());
+        office.setLocationId(locationId);
+        office.setName(name.trim());
+        office.setLocalName(localName);
+        office.setShortName(shortName);
+        office.setShortNameLocal(shortNameLocal);
+    }
+
+    private OfficeResponse toOfficeResponse(Office office) {
+        Department department = office.getDepartment();
+        Long departmentId = department == null ? null : department.getId();
+        String departmentName = department == null ? null : department.getName();
+        String departmentLocalName = department == null ? null : department.getLocalName();
+
+        OfficeType officeType = office.getOfficeType();
+        Long officeTypeId = officeType == null ? null : officeType.getId();
+        String officeTypeName = officeType == null ? null : officeType.getName();
+        String officeTypeLocalName = officeType == null ? null : officeType.getLocalName();
+
+        return new OfficeResponse(
+                office.getId(),
+                departmentId,
+                departmentName,
+                departmentLocalName,
+                officeTypeId,
+                officeTypeName,
+                officeTypeLocalName,
+                office.getLevel(),
+                office.getLocationId(),
+                office.getName(),
+                office.getLocalName(),
+                office.getShortName(),
+                office.getShortNameLocal()
+        );
+    }
+
+    private Department requireDepartment(Long departmentId) {
+        if (departmentId == null) throw new IllegalArgumentException("departmentId is required");
+        return departmentRepository.findById(departmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid departmentId"));
+    }
+
+    private OfficeType requireOfficeType(Long officeTypeId) {
+        if (officeTypeId == null) throw new IllegalArgumentException("officeTypeId is required");
+        return officeTypeRepository.findById(officeTypeId)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid officeTypeId"));
+    }
+
+    private void validateLocation(String levelRaw, Long locationId) {
+        if (levelRaw == null || levelRaw.trim().isEmpty()) throw new IllegalArgumentException("level is required");
+        if (locationId == null) throw new IllegalArgumentException("locationId is required");
+        String level = levelRaw.trim().toUpperCase();
+
+        boolean exists = switch (level) {
+            case "STATE" -> stateRepository.existsById(locationId);
+            case "DIVISION" -> divisionRepository.existsById(locationId);
+            case "DISTRICT" -> districtRepository.existsById(locationId);
+            case "SUBDISTRICT" -> subdistrictRepository.existsById(locationId);
+            case "TALUKA" -> talukaRepository.existsById(locationId);
+            case "VILLAGE" -> villageRepository.existsById(locationId);
+            default -> throw new IllegalArgumentException("Invalid level");
+        };
+
+        if (!exists) throw new IllegalArgumentException("Invalid locationId for level " + level);
     }
 
     private static void applyOfficeTypeFields(OfficeType officeType,

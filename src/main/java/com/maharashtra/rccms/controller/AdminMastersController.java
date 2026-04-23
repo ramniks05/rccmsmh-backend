@@ -8,6 +8,9 @@ import com.maharashtra.rccms.dto.BoundaryMasterResponse;
 import com.maharashtra.rccms.dto.DepartmentCreateRequest;
 import com.maharashtra.rccms.dto.DepartmentResponse;
 import com.maharashtra.rccms.dto.DepartmentUpdateRequest;
+import com.maharashtra.rccms.dto.DesignationCreateRequest;
+import com.maharashtra.rccms.dto.DesignationResponse;
+import com.maharashtra.rccms.dto.DesignationUpdateRequest;
 import com.maharashtra.rccms.dto.DistrictCreateRequest;
 import com.maharashtra.rccms.dto.DivisionCreateRequest;
 import com.maharashtra.rccms.dto.SubdistrictCreateRequest;
@@ -27,6 +30,7 @@ import com.maharashtra.rccms.dto.OfficeTypeUpdateRequest;
 import com.maharashtra.rccms.dto.VillageCreateRequest;
 import com.maharashtra.rccms.model.master.Act;
 import com.maharashtra.rccms.model.master.Department;
+import com.maharashtra.rccms.model.master.Designation;
 import com.maharashtra.rccms.model.master.Section;
 import com.maharashtra.rccms.model.master.Subject;
 import com.maharashtra.rccms.model.master.Office;
@@ -39,6 +43,7 @@ import com.maharashtra.rccms.model.master.Taluka;
 import com.maharashtra.rccms.model.master.Village;
 import com.maharashtra.rccms.repository.ActRepository;
 import com.maharashtra.rccms.repository.DepartmentRepository;
+import com.maharashtra.rccms.repository.DesignationRepository;
 import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.DivisionRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
@@ -73,6 +78,7 @@ public class AdminMastersController {
     private final SectionRepository sectionRepository;
     private final SubjectRepository subjectRepository;
     private final DepartmentRepository departmentRepository;
+    private final DesignationRepository designationRepository;
     private final OfficeRepository officeRepository;
     private final OfficeTypeRepository officeTypeRepository;
     private final StateRepository stateRepository;
@@ -87,6 +93,7 @@ public class AdminMastersController {
             SectionRepository sectionRepository,
             SubjectRepository subjectRepository,
             DepartmentRepository departmentRepository,
+            DesignationRepository designationRepository,
             OfficeRepository officeRepository,
             OfficeTypeRepository officeTypeRepository,
             StateRepository stateRepository,
@@ -100,6 +107,7 @@ public class AdminMastersController {
         this.sectionRepository = sectionRepository;
         this.subjectRepository = subjectRepository;
         this.departmentRepository = departmentRepository;
+        this.designationRepository = designationRepository;
         this.officeRepository = officeRepository;
         this.officeTypeRepository = officeTypeRepository;
         this.stateRepository = stateRepository;
@@ -126,6 +134,62 @@ public class AdminMastersController {
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
+    }
+
+    @PostMapping("/designations")
+    public ResponseEntity<?> createDesignation(@RequestBody DesignationCreateRequest request) {
+        try {
+            Department department = requireDepartment(request.getDepartmentId());
+
+            Designation designation = new Designation();
+            designation.setDepartment(department);
+            applyDesignationFields(designation, request.getName(), request.getLocalName(), request.getShortName(), request.getShortNameLocal());
+            designation = designationRepository.save(designation);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toDesignationResponse(designation));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/designations")
+    public ResponseEntity<?> listDesignations(@RequestParam(name = "departmentId", required = false) Long departmentId) {
+        List<DesignationResponse> items = designationRepository.findAll().stream()
+                .filter(d -> departmentId == null || (d.getDepartment() != null && departmentId.equals(d.getDepartment().getId())))
+                .map(AdminMastersController::toDesignationResponse)
+                .toList();
+        return ResponseEntity.ok(items);
+    }
+
+    @PutMapping("/designations/{id}")
+    public ResponseEntity<?> updateDesignation(@PathVariable("id") Long id, @RequestBody DesignationUpdateRequest request) {
+        try {
+            Long designationId = id;
+            Designation designation = designationRepository.findById(designationId)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid designation id"));
+
+            Department department = requireDepartment(request.getDepartmentId());
+            designation.setDepartment(department);
+            applyDesignationFields(designation, request.getName(), request.getLocalName(), request.getShortName(), request.getShortNameLocal());
+            designation = designationRepository.save(designation);
+            return ResponseEntity.ok(toDesignationResponse(designation));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/designations/{id}")
+    public ResponseEntity<?> deleteDesignation(@PathVariable("id") Long id) {
+        Long designationId = id;
+        if (!designationRepository.existsById(designationId)) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("error", "Invalid designation id");
+            return ResponseEntity.badRequest().body(body);
+        }
+        designationRepository.deleteById(designationId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("deleted", true);
+        body.put("id", designationId);
+        return ResponseEntity.ok(body);
     }
 
     @PostMapping("/offices")
@@ -813,6 +877,35 @@ public class AdminMastersController {
                 subject.getSubjectCode(),
                 subject.getSubjectName(),
                 subject.getSubjectNameLocal()
+        );
+    }
+
+    private static void applyDesignationFields(Designation designation,
+                                               String name,
+                                               String localName,
+                                               String shortName,
+                                               String shortNameLocal) {
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("name is required");
+        designation.setName(name.trim());
+        designation.setLocalName(localName);
+        designation.setShortName(shortName);
+        designation.setShortNameLocal(shortNameLocal);
+    }
+
+    private static DesignationResponse toDesignationResponse(Designation designation) {
+        Department department = designation.getDepartment();
+        Long departmentId = department == null ? null : department.getId();
+        String departmentName = department == null ? null : department.getName();
+        String departmentLocalName = department == null ? null : department.getLocalName();
+        return new DesignationResponse(
+                designation.getId(),
+                departmentId,
+                departmentName,
+                departmentLocalName,
+                designation.getName(),
+                designation.getLocalName(),
+                designation.getShortName(),
+                designation.getShortNameLocal()
         );
     }
 

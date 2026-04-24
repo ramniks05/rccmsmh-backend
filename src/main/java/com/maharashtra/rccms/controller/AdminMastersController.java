@@ -3,11 +3,17 @@ package com.maharashtra.rccms.controller;
 import com.maharashtra.rccms.dto.ActCreateRequest;
 import com.maharashtra.rccms.dto.ActResponse;
 import com.maharashtra.rccms.dto.ActUpdateRequest;
+import com.maharashtra.rccms.dto.CaseCategoryCreateRequest;
+import com.maharashtra.rccms.dto.CaseCategoryResponse;
+import com.maharashtra.rccms.dto.CaseCategoryUpdateRequest;
 import com.maharashtra.rccms.dto.BoundaryMasterCreateRequest;
 import com.maharashtra.rccms.dto.BoundaryMasterResponse;
 import com.maharashtra.rccms.dto.DepartmentCreateRequest;
 import com.maharashtra.rccms.dto.DepartmentResponse;
 import com.maharashtra.rccms.dto.DepartmentUpdateRequest;
+import com.maharashtra.rccms.dto.DocumentTypeCreateRequest;
+import com.maharashtra.rccms.dto.DocumentTypeResponse;
+import com.maharashtra.rccms.dto.DocumentTypeUpdateRequest;
 import com.maharashtra.rccms.dto.DesignationCreateRequest;
 import com.maharashtra.rccms.dto.DesignationResponse;
 import com.maharashtra.rccms.dto.DesignationUpdateRequest;
@@ -29,8 +35,10 @@ import com.maharashtra.rccms.dto.OfficeTypeResponse;
 import com.maharashtra.rccms.dto.OfficeTypeUpdateRequest;
 import com.maharashtra.rccms.dto.VillageCreateRequest;
 import com.maharashtra.rccms.model.master.Act;
+import com.maharashtra.rccms.model.master.CaseCategory;
 import com.maharashtra.rccms.model.master.Department;
 import com.maharashtra.rccms.model.master.Designation;
+import com.maharashtra.rccms.model.master.DocumentType;
 import com.maharashtra.rccms.model.master.Section;
 import com.maharashtra.rccms.model.master.Subject;
 import com.maharashtra.rccms.model.master.Office;
@@ -42,8 +50,10 @@ import com.maharashtra.rccms.model.master.Subdistrict;
 import com.maharashtra.rccms.model.master.Taluka;
 import com.maharashtra.rccms.model.master.Village;
 import com.maharashtra.rccms.repository.ActRepository;
+import com.maharashtra.rccms.repository.CaseCategoryRepository;
 import com.maharashtra.rccms.repository.DepartmentRepository;
 import com.maharashtra.rccms.repository.DesignationRepository;
+import com.maharashtra.rccms.repository.DocumentTypeRepository;
 import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.DivisionRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
@@ -67,18 +77,22 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/admin/masters")
 public class AdminMastersController {
 
     private final ActRepository actRepository;
+    private final CaseCategoryRepository caseCategoryRepository;
     private final SectionRepository sectionRepository;
     private final SubjectRepository subjectRepository;
     private final DepartmentRepository departmentRepository;
     private final DesignationRepository designationRepository;
+    private final DocumentTypeRepository documentTypeRepository;
     private final OfficeRepository officeRepository;
     private final OfficeTypeRepository officeTypeRepository;
     private final StateRepository stateRepository;
@@ -90,10 +104,12 @@ public class AdminMastersController {
 
     public AdminMastersController(
             ActRepository actRepository,
+            CaseCategoryRepository caseCategoryRepository,
             SectionRepository sectionRepository,
             SubjectRepository subjectRepository,
             DepartmentRepository departmentRepository,
             DesignationRepository designationRepository,
+            DocumentTypeRepository documentTypeRepository,
             OfficeRepository officeRepository,
             OfficeTypeRepository officeTypeRepository,
             StateRepository stateRepository,
@@ -104,10 +120,12 @@ public class AdminMastersController {
             VillageRepository villageRepository
     ) {
         this.actRepository = actRepository;
+        this.caseCategoryRepository = caseCategoryRepository;
         this.sectionRepository = sectionRepository;
         this.subjectRepository = subjectRepository;
         this.departmentRepository = departmentRepository;
         this.designationRepository = designationRepository;
+        this.documentTypeRepository = documentTypeRepository;
         this.officeRepository = officeRepository;
         this.officeTypeRepository = officeTypeRepository;
         this.stateRepository = stateRepository;
@@ -189,6 +207,163 @@ public class AdminMastersController {
         Map<String, Object> body = new HashMap<>();
         body.put("deleted", true);
         body.put("id", designationId);
+        return ResponseEntity.ok(body);
+    }
+
+    @PostMapping("/case-categories")
+    public ResponseEntity<?> createCaseCategory(@RequestBody CaseCategoryCreateRequest request) {
+        try {
+            OfficeType hearingOfficeType = requireOfficeType(request.getHearingOfficeTypeId());
+            CaseCategory nextCategory = resolveOptionalNextCategory(null, request.getNextCaseCategoryId());
+
+            CaseCategory category = new CaseCategory();
+            applyCaseCategoryFields(category, request.getCode(), request.getName(), request.getLocalName(), request.getSequenceNo());
+            category.setHearingOfficeType(hearingOfficeType);
+            category.setNextCategory(nextCategory);
+            category = caseCategoryRepository.save(category);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toCaseCategoryResponse(category));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/case-categories")
+    public ResponseEntity<?> listCaseCategories(
+            @RequestParam(name = "departmentId", required = false) Long departmentId,
+            @RequestParam(name = "hearingOfficeTypeId", required = false) Long hearingOfficeTypeId
+    ) {
+        List<CaseCategoryResponse> items = caseCategoryRepository.findAll().stream()
+                .filter(c -> hearingOfficeTypeId == null
+                        || (c.getHearingOfficeType() != null && hearingOfficeTypeId.equals(c.getHearingOfficeType().getId())))
+                .filter(c -> departmentId == null
+                        || (c.getHearingOfficeType() != null
+                        && c.getHearingOfficeType().getDepartment() != null
+                        && departmentId.equals(c.getHearingOfficeType().getDepartment().getId())))
+                .sorted((a, b) -> {
+                    Integer sa = a.getSequenceNo() == null ? Integer.MAX_VALUE : a.getSequenceNo();
+                    Integer sb = b.getSequenceNo() == null ? Integer.MAX_VALUE : b.getSequenceNo();
+                    int cmp = sa.compareTo(sb);
+                    if (cmp != 0) return cmp;
+                    Long ida = a.getId() == null ? Long.MAX_VALUE : a.getId();
+                    Long idb = b.getId() == null ? Long.MAX_VALUE : b.getId();
+                    return ida.compareTo(idb);
+                })
+                .map(AdminMastersController::toCaseCategoryResponse)
+                .toList();
+        return ResponseEntity.ok(items);
+    }
+
+    @PutMapping("/case-categories/{id}")
+    public ResponseEntity<?> updateCaseCategory(@PathVariable("id") Long id, @RequestBody CaseCategoryUpdateRequest request) {
+        try {
+            Long categoryId = id;
+            CaseCategory category = caseCategoryRepository.findById(categoryId)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid case category id"));
+
+            OfficeType hearingOfficeType = requireOfficeType(request.getHearingOfficeTypeId());
+            CaseCategory nextCategory = resolveOptionalNextCategory(categoryId, request.getNextCaseCategoryId());
+
+            applyCaseCategoryFields(category, request.getCode(), request.getName(), request.getLocalName(), request.getSequenceNo());
+            category.setHearingOfficeType(hearingOfficeType);
+            category.setNextCategory(nextCategory);
+            category = caseCategoryRepository.save(category);
+            return ResponseEntity.ok(toCaseCategoryResponse(category));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/case-categories/{id}")
+    public ResponseEntity<?> deleteCaseCategory(@PathVariable("id") Long id) {
+        Long categoryId = id;
+        if (!caseCategoryRepository.existsById(categoryId)) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("error", "Invalid case category id");
+            return ResponseEntity.badRequest().body(body);
+        }
+        for (CaseCategory inbound : caseCategoryRepository.findByNextCategory_Id(categoryId)) {
+            inbound.setNextCategory(null);
+            caseCategoryRepository.save(inbound);
+        }
+        caseCategoryRepository.deleteById(categoryId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("deleted", true);
+        body.put("id", categoryId);
+        return ResponseEntity.ok(body);
+    }
+
+    @PostMapping("/document-types")
+    public ResponseEntity<?> createDocumentType(@RequestBody DocumentTypeCreateRequest request) {
+        try {
+            DocumentType doc = new DocumentType();
+            applyDocumentTypeFields(
+                    doc,
+                    request.getCode(),
+                    request.getName(),
+                    request.getLocalName(),
+                    request.getValidForPhotoId(),
+                    request.getValidForAddress(),
+                    request.getSourceUrl()
+            );
+            doc = documentTypeRepository.save(doc);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toDocumentTypeResponse(doc));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/document-types")
+    public ResponseEntity<?> listDocumentTypes(
+            @RequestParam(name = "validForPhotoId", required = false) Boolean validForPhotoId,
+            @RequestParam(name = "validForAddress", required = false) Boolean validForAddress
+    ) {
+        List<DocumentTypeResponse> items = documentTypeRepository.findAll().stream()
+                .filter(d -> validForPhotoId == null || validForPhotoId == d.isValidForPhotoId())
+                .filter(d -> validForAddress == null || validForAddress == d.isValidForAddress())
+                .sorted((a, b) -> {
+                    String ca = a.getCode() == null ? "" : a.getCode();
+                    String cb = b.getCode() == null ? "" : b.getCode();
+                    return ca.compareToIgnoreCase(cb);
+                })
+                .map(AdminMastersController::toDocumentTypeResponse)
+                .toList();
+        return ResponseEntity.ok(items);
+    }
+
+    @PutMapping("/document-types/{id}")
+    public ResponseEntity<?> updateDocumentType(@PathVariable("id") Long id, @RequestBody DocumentTypeUpdateRequest request) {
+        try {
+            Long docId = id;
+            DocumentType doc = documentTypeRepository.findById(docId)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid document type id"));
+            applyDocumentTypeFields(
+                    doc,
+                    request.getCode(),
+                    request.getName(),
+                    request.getLocalName(),
+                    request.getValidForPhotoId(),
+                    request.getValidForAddress(),
+                    request.getSourceUrl()
+            );
+            doc = documentTypeRepository.save(doc);
+            return ResponseEntity.ok(toDocumentTypeResponse(doc));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/document-types/{id}")
+    public ResponseEntity<?> deleteDocumentType(@PathVariable("id") Long id) {
+        Long docId = id;
+        if (!documentTypeRepository.existsById(docId)) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("error", "Invalid document type id");
+            return ResponseEntity.badRequest().body(body);
+        }
+        documentTypeRepository.deleteById(docId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("deleted", true);
+        body.put("id", docId);
         return ResponseEntity.ok(body);
     }
 
@@ -952,6 +1127,116 @@ public class AdminMastersController {
                 office.getLocalName(),
                 office.getShortName(),
                 office.getShortNameLocal()
+        );
+    }
+
+    private CaseCategory resolveOptionalNextCategory(Long categoryId, Long nextCaseCategoryId) {
+        if (nextCaseCategoryId == null) {
+            return null;
+        }
+        CaseCategory next = caseCategoryRepository.findById(nextCaseCategoryId)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid nextCaseCategoryId"));
+        assertNoNextCategoryCycle(categoryId, nextCaseCategoryId);
+        return next;
+    }
+
+    private void assertNoNextCategoryCycle(Long categoryId, Long nextCategoryId) {
+        if (nextCategoryId == null) {
+            return;
+        }
+        if (categoryId != null && categoryId.equals(nextCategoryId)) {
+            throw new IllegalArgumentException("nextCaseCategoryId cannot reference the same category");
+        }
+
+        Long current = nextCategoryId;
+        Set<Long> visited = new HashSet<>();
+        while (current != null) {
+            if (categoryId != null && categoryId.equals(current)) {
+                throw new IllegalArgumentException("nextCaseCategoryId would create a cycle");
+            }
+            if (!visited.add(current)) {
+                throw new IllegalArgumentException("nextCaseCategoryId chain contains a cycle");
+            }
+            CaseCategory node = caseCategoryRepository.findById(current)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid nextCaseCategoryId"));
+            CaseCategory next = node.getNextCategory();
+            current = next == null ? null : next.getId();
+        }
+    }
+
+    private static void applyCaseCategoryFields(CaseCategory category,
+                                                String code,
+                                                String name,
+                                                String localName,
+                                                Integer sequenceNo) {
+        if (code == null || code.trim().isEmpty()) throw new IllegalArgumentException("code is required");
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("name is required");
+        if (sequenceNo == null) throw new IllegalArgumentException("sequenceNo is required");
+        category.setCode(code.trim());
+        category.setName(name.trim());
+        category.setLocalName(localName);
+        category.setSequenceNo(sequenceNo);
+    }
+
+    private static CaseCategoryResponse toCaseCategoryResponse(CaseCategory category) {
+        OfficeType hearingOfficeType = category.getHearingOfficeType();
+        Long hearingOfficeTypeId = hearingOfficeType == null ? null : hearingOfficeType.getId();
+        String hearingOfficeTypeName = hearingOfficeType == null ? null : hearingOfficeType.getName();
+        String hearingOfficeTypeLocalName = hearingOfficeType == null ? null : hearingOfficeType.getLocalName();
+
+        CaseCategory next = category.getNextCategory();
+        Long nextId = next == null ? null : next.getId();
+        String nextCode = next == null ? null : next.getCode();
+        String nextName = next == null ? null : next.getName();
+
+        return new CaseCategoryResponse(
+                category.getId(),
+                category.getCode(),
+                category.getName(),
+                category.getLocalName(),
+                category.getSequenceNo(),
+                hearingOfficeTypeId,
+                hearingOfficeTypeName,
+                hearingOfficeTypeLocalName,
+                nextId,
+                nextCode,
+                nextName
+        );
+    }
+
+    private static void applyDocumentTypeFields(DocumentType doc,
+                                                String code,
+                                                String name,
+                                                String localName,
+                                                Boolean validForPhotoId,
+                                                Boolean validForAddress,
+                                                String sourceUrl) {
+        if (code == null || code.trim().isEmpty()) throw new IllegalArgumentException("code is required");
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("name is required");
+        String url = sourceUrl == null ? null : sourceUrl.trim();
+        if (url != null && url.isEmpty()) {
+            url = null;
+        }
+        if (url != null && url.length() > 2048) {
+            throw new IllegalArgumentException("sourceUrl exceeds maximum length (2048)");
+        }
+        doc.setCode(code.trim());
+        doc.setName(name.trim());
+        doc.setLocalName(localName);
+        doc.setValidForPhotoId(Boolean.TRUE.equals(validForPhotoId));
+        doc.setValidForAddress(Boolean.TRUE.equals(validForAddress));
+        doc.setSourceUrl(url);
+    }
+
+    private static DocumentTypeResponse toDocumentTypeResponse(DocumentType doc) {
+        return new DocumentTypeResponse(
+                doc.getId(),
+                doc.getCode(),
+                doc.getName(),
+                doc.getLocalName(),
+                doc.isValidForPhotoId(),
+                doc.isValidForAddress(),
+                doc.getSourceUrl()
         );
     }
 

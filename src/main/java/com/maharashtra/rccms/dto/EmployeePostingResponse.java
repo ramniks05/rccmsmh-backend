@@ -9,6 +9,9 @@ public class EmployeePostingResponse {
     private final Long officeId;
     private final String officeName;
 
+    private final Long officeBranchId;
+    private final String officeBranchName;
+
     private final Long designationId;
     private final String designationName;
 
@@ -20,6 +23,8 @@ public class EmployeePostingResponse {
             Long employeeId,
             Long officeId,
             String officeName,
+            Long officeBranchId,
+            String officeBranchName,
             Long designationId,
             String designationName,
             LocalDate fromDate,
@@ -29,6 +34,8 @@ public class EmployeePostingResponse {
         this.employeeId = employeeId;
         this.officeId = officeId;
         this.officeName = officeName;
+        this.officeBranchId = officeBranchId;
+        this.officeBranchName = officeBranchName;
         this.designationId = designationId;
         this.designationName = designationName;
         this.fromDate = fromDate;
@@ -49,6 +56,14 @@ public class EmployeePostingResponse {
 
     public String getOfficeName() {
         return officeName;
+    }
+
+    public Long getOfficeBranchId() {
+        return officeBranchId;
+    }
+
+    public String getOfficeBranchName() {
+        return officeBranchName;
     }
 
     public Long getDesignationId() {

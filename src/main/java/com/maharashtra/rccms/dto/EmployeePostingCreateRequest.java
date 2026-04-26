@@ -4,6 +4,7 @@ import java.time.LocalDate;
 
 public class EmployeePostingCreateRequest {
     private Long officeId;
+    private Long officeBranchId; // optional
     private Long designationId;
     private LocalDate fromDate;
 
@@ -13,6 +14,14 @@ public class EmployeePostingCreateRequest {
 
     public void setOfficeId(Long officeId) {
         this.officeId = officeId;
+    }
+
+    public Long getOfficeBranchId() {
+        return officeBranchId;
+    }
+
+    public void setOfficeBranchId(Long officeBranchId) {
+        this.officeBranchId = officeBranchId;
     }
 
     public Long getDesignationId() {

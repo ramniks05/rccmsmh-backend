@@ -2,6 +2,7 @@ package com.maharashtra.rccms.model;
 
 import com.maharashtra.rccms.model.master.Designation;
 import com.maharashtra.rccms.model.master.Office;
+import com.maharashtra.rccms.model.master.OfficeBranch;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -28,6 +29,10 @@ public class EmployeePosting {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "office_id", nullable = false)
     private Office office;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "office_branch_id")
+    private OfficeBranch officeBranch;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "designation_id", nullable = false)
@@ -58,6 +63,14 @@ public class EmployeePosting {
 
     public void setOffice(Office office) {
         this.office = office;
+    }
+
+    public OfficeBranch getOfficeBranch() {
+        return officeBranch;
+    }
+
+    public void setOfficeBranch(OfficeBranch officeBranch) {
+        this.officeBranch = officeBranch;
     }
 
     public Designation getDesignation() {

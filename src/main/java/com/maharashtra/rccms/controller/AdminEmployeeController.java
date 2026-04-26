@@ -10,9 +10,11 @@ import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
 import com.maharashtra.rccms.model.master.Designation;
 import com.maharashtra.rccms.model.master.Office;
+import com.maharashtra.rccms.model.master.OfficeBranch;
 import com.maharashtra.rccms.repository.DesignationRepository;
 import com.maharashtra.rccms.repository.EmployeePostingRepository;
 import com.maharashtra.rccms.repository.EmployeeRepository;
+import com.maharashtra.rccms.repository.OfficeBranchRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,25 +30,30 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/admin/employees")
+@SuppressWarnings("null")
 public class AdminEmployeeController {
 
     private final EmployeeRepository employeeRepository;
     private final EmployeePostingRepository employeePostingRepository;
     private final OfficeRepository officeRepository;
+    private final OfficeBranchRepository officeBranchRepository;
     private final DesignationRepository designationRepository;
 
     public AdminEmployeeController(
             EmployeeRepository employeeRepository,
             EmployeePostingRepository employeePostingRepository,
             OfficeRepository officeRepository,
+            OfficeBranchRepository officeBranchRepository,
             DesignationRepository designationRepository
     ) {
         this.employeeRepository = employeeRepository;
         this.employeePostingRepository = employeePostingRepository;
         this.officeRepository = officeRepository;
+        this.officeBranchRepository = officeBranchRepository;
         this.designationRepository = designationRepository;
     }
 
@@ -75,8 +82,8 @@ public class AdminEmployeeController {
     @PutMapping("/{id}")
     public ResponseEntity<?> updateEmployee(@PathVariable("id") Long id, @RequestBody EmployeeUpdateRequest request) {
         try {
-            Employee employee = employeeRepository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid employee id"));
+            Employee employee = employeeRepository.findById(id).orElse(null);
+            if (employee == null) throw new IllegalArgumentException("Invalid employee id");
             Boolean isActive = request.getIsActive() == null ? employee.getIsActive() : request.getIsActive();
             applyEmployeeFields(employee, request.getEmployeeCode(), request.getFullName(), request.getFullNameLocal(),
                     request.getMobile(), request.getEmail(), isActive);
@@ -90,13 +97,22 @@ public class AdminEmployeeController {
     @PostMapping("/{id}/postings")
     public ResponseEntity<?> addPosting(@PathVariable("id") Long employeeId, @RequestBody EmployeePostingCreateRequest request) {
         try {
-            Employee employee = employeeRepository.findById(employeeId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid employee id"));
+            Employee employee = employeeRepository.findById(employeeId).orElse(null);
+            if (employee == null) throw new IllegalArgumentException("Invalid employee id");
 
             Long officeId = request.getOfficeId();
             if (officeId == null) throw new IllegalArgumentException("officeId is required");
             Office office = officeRepository.findById(officeId)
                     .orElseThrow(() -> new IllegalArgumentException("Invalid officeId"));
+
+            OfficeBranch officeBranch = null;
+            if (request.getOfficeBranchId() != null) {
+                officeBranch = officeBranchRepository.findById(request.getOfficeBranchId()).orElse(null);
+                if (officeBranch == null) throw new IllegalArgumentException("Invalid officeBranchId");
+                if (!Objects.equals(officeBranch.getOffice().getId(), office.getId())) {
+                    throw new IllegalArgumentException("officeBranchId does not belong to given officeId");
+                }
+            }
 
             Long designationId = request.getDesignationId();
             if (designationId == null) throw new IllegalArgumentException("designationId is required");
@@ -118,6 +134,7 @@ public class AdminEmployeeController {
             EmployeePosting posting = new EmployeePosting();
             posting.setEmployee(employee);
             posting.setOffice(office);
+            posting.setOfficeBranch(officeBranch);
             posting.setDesignation(designation);
             posting.setFromDate(fromDate);
             posting.setToDate(null);
@@ -140,8 +157,8 @@ public class AdminEmployeeController {
     @PostMapping("/postings/{postingId}/close")
     public ResponseEntity<?> closePosting(@PathVariable("postingId") Long postingId, @RequestBody EmployeePostingCloseRequest request) {
         try {
-            EmployeePosting posting = employeePostingRepository.findById(postingId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid posting id"));
+            EmployeePosting posting = employeePostingRepository.findById(postingId).orElse(null);
+            if (posting == null) throw new IllegalArgumentException("Invalid posting id");
             if (posting.getToDate() != null) throw new IllegalArgumentException("Posting already closed");
             if (request.getToDate() == null) throw new IllegalArgumentException("toDate is required");
             if (posting.getFromDate() != null && request.getToDate().isBefore(posting.getFromDate())) {
@@ -187,11 +204,14 @@ public class AdminEmployeeController {
     private static EmployeePostingResponse toPostingResponse(EmployeePosting posting) {
         Employee employee = posting.getEmployee();
         Office office = posting.getOffice();
+        OfficeBranch officeBranch = posting.getOfficeBranch();
         Designation designation = posting.getDesignation();
 
         Long employeeId = employee == null ? null : employee.getId();
         Long officeId = office == null ? null : office.getId();
         String officeName = office == null ? null : office.getName();
+        Long officeBranchId = officeBranch == null ? null : officeBranch.getId();
+        String officeBranchName = officeBranch == null ? null : officeBranch.getName();
         Long designationId = designation == null ? null : designation.getId();
         String designationName = designation == null ? null : designation.getName();
 
@@ -200,6 +220,8 @@ public class AdminEmployeeController {
                 employeeId,
                 officeId,
                 officeName,
+                officeBranchId,
+                officeBranchName,
                 designationId,
                 designationName,
                 posting.getFromDate(),

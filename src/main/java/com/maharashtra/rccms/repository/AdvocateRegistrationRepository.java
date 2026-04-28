@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface AdvocateRegistrationRepository extends JpaRepository<AdvocateRegistration, Long> {
     boolean existsByEmail(String email);
     Optional<AdvocateRegistration> findByEmail(String email);
+
+    Optional<AdvocateRegistration> findFirstByBarCouncilNumberIgnoreCaseOrderByIdAsc(String barCouncilNumber);
 }

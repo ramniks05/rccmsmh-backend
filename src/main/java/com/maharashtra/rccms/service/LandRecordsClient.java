@@ -2,6 +2,8 @@ package com.maharashtra.rccms.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -25,6 +27,9 @@ import java.io.ByteArrayOutputStream;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Backend proxy for Mahabhumi Land Records APIs.
@@ -60,6 +65,14 @@ public class LandRecordsClient {
     }
 
     public JsonNode postForm(String path, Map<String, String> formFields) {
+        return executePostForm(path, formFields, true);
+    }
+
+    public JsonNode postFormRaw(String path, Map<String, String> formFields) {
+        return executePostForm(path, formFields, false);
+    }
+
+    private JsonNode executePostForm(String path, Map<String, String> formFields, boolean decodeResponseData) {
         String url = baseUrl + normalizePath(path);
         HttpHeaders headers = buildHeaders();
 
@@ -74,9 +87,9 @@ public class LandRecordsClient {
 
         try {
             ResponseEntity<String> res = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
-            return handleUpstreamResponse(res.getStatusCode().value(), res.getBody());
+            return handleUpstreamResponse(res.getStatusCode().value(), res.getBody(), decodeResponseData);
         } catch (HttpStatusCodeException ex) {
-            return handleUpstreamResponse(ex.getStatusCode().value(), ex.getResponseBodyAsString());
+            return handleUpstreamResponse(ex.getStatusCode().value(), ex.getResponseBodyAsString(), decodeResponseData);
         } catch (RestClientException ex) {
             return errorNode(500, "Upstream call failed: " + ex.getMessage());
         }
@@ -100,17 +113,17 @@ public class LandRecordsClient {
         return headers;
     }
 
-    private JsonNode handleUpstreamResponse(int httpStatus, String body) {
+    private JsonNode handleUpstreamResponse(int httpStatus, String body, boolean decodeResponseData) {
         if (body == null || body.isBlank()) {
             return errorNode(httpStatus, "Empty response from upstream");
         }
         try {
             JsonNode root = objectMapper.readTree(body);
-            JsonNode decoded = decodeUpstreamData(root);
-            if (decoded != null && decoded.isObject() && decoded.get("httpStatus") == null) {
-                ((ObjectNode) decoded).put("httpStatus", httpStatus);
+            JsonNode out = decodeResponseData ? decodeUpstreamData(root) : root;
+            if (out != null && out.isObject() && out.get("httpStatus") == null) {
+                ((ObjectNode) out).put("httpStatus", httpStatus);
             }
-            return decoded;
+            return out;
         } catch (Exception ex) {
             ObjectNode node = objectMapper.createObjectNode();
             node.put("httpStatus", httpStatus);
@@ -136,38 +149,57 @@ public class LandRecordsClient {
         }
 
         String encoded = dataNode.asText();
-        JsonNode decodedJson = tryDecodeToJson(encoded);
-        if (decodedJson == null) return root;
+        JsonNode decodedData = tryDecodeData(encoded);
+        if (decodedData == null) return root;
 
         ObjectNode copy = ((ObjectNode) root).deepCopy();
-        copy.set("data", decodedJson);
+        copy.set("data", decodedData);
         return copy;
     }
 
-    private JsonNode tryDecodeToJson(String encoded) {
-        // Upstream returns base64-encoded ciphertext.
-        // Some endpoints might still return base64(JSON) or gzipped JSON, so we try in stages.
-        DecodedPayload first = decodeBase64ToTextMaybeGunzip(encoded);
+    private JsonNode tryDecodeData(String encoded) {
+        // As per API doc:
+        // 1) base64_decode(data) => bytes
+        // 2) AES-256-CBC decrypt on those bytes
+        byte[] firstBytes = decodeBase64Bytes(encoded);
+        if (firstBytes == null) return null;
+
+        byte[] firstPlainBytes = isGzip(firstBytes) ? gunzip(firstBytes) : firstBytes;
+        DecodedPayload first = firstPlainBytes == null ? null : new DecodedPayload(new String(firstPlainBytes, StandardCharsets.UTF_8));
+
         JsonNode node = tryParseJson(first);
         if (node != null) return node;
 
-        // Most likely: AES-256-CBC decrypt using key/iv derived from Authorization token.
-        String aes = tryAes256CbcDecryptFromToken(first == null ? null : first.text);
+        // Most likely: AES-256-CBC decrypt using one of configured secrets.
+        String aes = tryAes256CbcDecrypt(firstBytes);
         if (aes != null) {
             node = tryParseJson(new DecodedPayload(aes));
             if (node != null) return node;
+            if (!aes.isBlank()) return JsonNodeFactory.instance.textNode(aes.trim());
         }
 
         if (first != null && looksLikeBase64(first.text)) {
-            DecodedPayload second = decodeBase64ToTextMaybeGunzip(first.text);
+            byte[] secondBytes = decodeBase64Bytes(first.text);
+            byte[] secondPlainBytes = isGzip(secondBytes) ? gunzip(secondBytes) : secondBytes;
+            DecodedPayload second = secondPlainBytes == null ? null : new DecodedPayload(new String(secondPlainBytes, StandardCharsets.UTF_8));
             node = tryParseJson(second);
             if (node != null) return node;
 
-            String aes2 = tryAes256CbcDecryptFromToken(second == null ? null : second.text);
+            String aes2 = tryAes256CbcDecrypt(secondBytes);
             if (aes2 != null) {
                 node = tryParseJson(new DecodedPayload(aes2));
                 if (node != null) return node;
+                if (!aes2.isBlank()) return JsonNodeFactory.instance.textNode(aes2.trim());
             }
+
+            if (second != null && second.text != null && !second.text.isBlank()) {
+                return JsonNodeFactory.instance.textNode(second.text.trim());
+            }
+        }
+
+        // Last resort: return base64-decoded text only when decryption attempts fail.
+        if (first != null && first.text != null && !first.text.isBlank()) {
+            return JsonNodeFactory.instance.textNode(first.text.trim());
         }
 
         return null;
@@ -199,45 +231,104 @@ public class LandRecordsClient {
         }
     }
 
-    /**
-     * As per "API Encryption and Decryption Document.pdf":
-     * - Base64 decode API "data" first (done before calling this method)
-     * - Then AES-256-CBC decrypt using:
-     *   - Key = last 32 characters of Authorization token
-     *   - IV  = last 16 characters of Authorization token
-     */
-    private String tryAes256CbcDecryptFromToken(String cipherText) {
-        String token = bearerToken == null ? null : bearerToken.trim();
-        if (token == null || token.isEmpty()) return null;
-        if (cipherText == null || cipherText.isBlank()) return null;
-        if (token.length() < 32 || token.length() < 16) return null;
-
-        String keyStr = token.substring(token.length() - 32);
-        String ivStr = token.substring(token.length() - 16);
-
+    private static byte[] decodeBase64Bytes(String encoded) {
+        if (encoded == null) return null;
         try {
-            byte[] keyBytes = keyStr.getBytes(StandardCharsets.UTF_8);
-            byte[] ivBytes = ivStr.getBytes(StandardCharsets.UTF_8);
-            SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
-            IvParameterSpec iv = new IvParameterSpec(ivBytes);
-
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            cipher.init(Cipher.DECRYPT_MODE, key, iv);
-
-            // The PDF examples show openssl_decrypt(base64_decode($data), ...)
-            // We already base64-decoded "data" once. If it is still base64-like, decode again.
-            byte[] inputBytes;
-            if (looksLikeBase64(cipherText)) {
-                inputBytes = Base64.getDecoder().decode(cipherText.replaceAll("\\s+", ""));
-            } else {
-                inputBytes = cipherText.getBytes(StandardCharsets.ISO_8859_1);
-            }
-
-            byte[] plain = cipher.doFinal(inputBytes);
-            return new String(plain, StandardCharsets.UTF_8).trim();
+            return Base64.getDecoder().decode(encoded.replaceAll("\\s+", ""));
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    private String tryAes256CbcDecrypt(byte[] cipherBytes) {
+        if (cipherBytes == null || cipherBytes.length == 0) return null;
+
+        for (KeyIvPair pair : candidateKeysAndIvs()) {
+            String plain = decryptAesCbc(cipherBytes, pair.key(), pair.iv());
+            if (plain != null && !plain.isBlank()) {
+                return plain.trim();
+            }
+        }
+        return null;
+    }
+
+    public JsonNode debugDecryptData(String encoded) {
+        ObjectNode out = objectMapper.createObjectNode();
+        out.put("encodedLength", encoded == null ? 0 : encoded.length());
+        out.put("looksLikeBase64", looksLikeBase64(encoded));
+
+        DecodedPayload first = decodeBase64ToTextMaybeGunzip(encoded);
+        if (first != null && first.text != null) {
+            out.put("base64DecodedText", first.text);
+            JsonNode firstJson = tryParseJson(first);
+            if (firstJson != null) out.set("base64DecodedJson", firstJson);
+        }
+
+        byte[] firstBytes = decodeBase64Bytes(encoded);
+        ArrayNode aesAttempts = objectMapper.createArrayNode();
+        for (KeyIvPair pair : candidateKeysAndIvs()) {
+            String plain = decryptAesCbc(firstBytes, pair.key(), pair.iv());
+            if (plain != null && !plain.isBlank()) {
+                ObjectNode item = objectMapper.createObjectNode();
+                item.put("mode", pair.label());
+                item.put("decryptedText", plain);
+                JsonNode asJson = tryParseJson(new DecodedPayload(plain));
+                if (asJson != null) item.set("decryptedJson", asJson);
+                aesAttempts.add(item);
+            }
+        }
+        out.set("aesAttempts", aesAttempts);
+        return out;
+    }
+
+    private record KeyIvPair(String label, byte[] key, byte[] iv) {}
+
+    private List<KeyIvPair> candidateKeysAndIvs() {
+        List<KeyIvPair> out = new ArrayList<>();
+        addTailDerivedCandidate(out, "bearer-tail", bearerToken);
+        addTailDerivedCandidate(out, "secret-tail", secretKey);
+        addTailDerivedCandidate(out, "api-tail", apiKey);
+
+        // Some integrations use raw secret as AES key (with deterministic IV from same secret).
+        addDirectSecretCandidate(out, "secret-sha256", secretKey);
+        addDirectSecretCandidate(out, "bearer-sha256", bearerToken);
+        return out;
+    }
+
+    private void addTailDerivedCandidate(List<KeyIvPair> out, String label, String source) {
+        String s = source == null ? "" : source.trim();
+        if (s.length() < 32) return;
+        byte[] key = s.substring(s.length() - 32).getBytes(StandardCharsets.UTF_8);
+        byte[] iv = s.substring(s.length() - 16).getBytes(StandardCharsets.UTF_8);
+        out.add(new KeyIvPair(label, key, iv));
+    }
+
+    private void addDirectSecretCandidate(List<KeyIvPair> out, String label, String source) {
+        String s = source == null ? "" : source.trim();
+        if (s.isEmpty()) return;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+            byte[] key = digest; // 32 bytes for AES-256
+            byte[] iv = new byte[16];
+            System.arraycopy(digest, 0, iv, 0, 16);
+            out.add(new KeyIvPair(label, key, iv));
+        } catch (Exception ignore) {
+            // no-op
+        }
+    }
+
+    private String decryptAesCbc(byte[] cipherBytes, byte[] keyBytes, byte[] ivBytes) {
+        if (cipherBytes == null || cipherBytes.length == 0) return null;
+        try {
+            SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+            IvParameterSpec iv = new IvParameterSpec(ivBytes);
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.DECRYPT_MODE, key, iv);
+            return new String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8);
+        } catch (Exception ignore) {
+            // try next candidate
+        }
+        return null;
     }
 
     private JsonNode tryParseJson(DecodedPayload payload) {

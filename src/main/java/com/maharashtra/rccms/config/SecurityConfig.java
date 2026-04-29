@@ -49,6 +49,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/auth/login", "/api/registrations/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/lookups/**").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )

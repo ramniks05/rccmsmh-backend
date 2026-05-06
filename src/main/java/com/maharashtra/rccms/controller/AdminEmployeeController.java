@@ -8,16 +8,20 @@ import com.maharashtra.rccms.dto.EmployeeResponse;
 import com.maharashtra.rccms.dto.EmployeeUpdateRequest;
 import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
+import com.maharashtra.rccms.model.OfficerRegistration;
 import com.maharashtra.rccms.model.master.Designation;
 import com.maharashtra.rccms.model.master.Office;
 import com.maharashtra.rccms.model.master.OfficeBranch;
 import com.maharashtra.rccms.repository.DesignationRepository;
 import com.maharashtra.rccms.repository.EmployeePostingRepository;
 import com.maharashtra.rccms.repository.EmployeeRepository;
+import com.maharashtra.rccms.repository.OfficerRegistrationRepository;
 import com.maharashtra.rccms.repository.OfficeBranchRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,35 +40,61 @@ import java.util.Objects;
 @RequestMapping("/api/admin/employees")
 @SuppressWarnings("null")
 public class AdminEmployeeController {
+    private static final String DEFAULT_OFFICER_PASSWORD = "Officer@123";
 
     private final EmployeeRepository employeeRepository;
     private final EmployeePostingRepository employeePostingRepository;
     private final OfficeRepository officeRepository;
     private final OfficeBranchRepository officeBranchRepository;
     private final DesignationRepository designationRepository;
+    private final OfficerRegistrationRepository officerRegistrationRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public AdminEmployeeController(
             EmployeeRepository employeeRepository,
             EmployeePostingRepository employeePostingRepository,
             OfficeRepository officeRepository,
             OfficeBranchRepository officeBranchRepository,
-            DesignationRepository designationRepository
+            DesignationRepository designationRepository,
+            OfficerRegistrationRepository officerRegistrationRepository,
+            PasswordEncoder passwordEncoder
     ) {
         this.employeeRepository = employeeRepository;
         this.employeePostingRepository = employeePostingRepository;
         this.officeRepository = officeRepository;
         this.officeBranchRepository = officeBranchRepository;
         this.designationRepository = designationRepository;
+        this.officerRegistrationRepository = officerRegistrationRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @PostMapping
+    @Transactional
     public ResponseEntity<?> createEmployee(@RequestBody EmployeeCreateRequest request) {
         try {
             Employee employee = new Employee();
             applyEmployeeFields(employee, request.getEmployeeCode(), request.getFullName(), request.getFullNameLocal(),
                     request.getMobile(), request.getEmail(), true);
+            String officerLoginId = buildOfficerLoginId(request.getEmail(), request.getEmployeeCode());
+            if (officerRegistrationRepository.existsByEmail(officerLoginId)) {
+                throw new IllegalArgumentException("Officer login ID already exists.");
+            }
             employee = employeeRepository.save(employee);
-            return ResponseEntity.status(HttpStatus.CREATED).body(toEmployeeResponse(employee));
+
+            OfficerRegistration officerRegistration = new OfficerRegistration();
+            officerRegistration.setFullName(employee.getFullName());
+            officerRegistration.setEmail(officerLoginId);
+            officerRegistration.setMobileNumber(trimToFallback(employee.getMobile(), "9999999999"));
+            officerRegistration.setAddress("Assigned by admin");
+            officerRegistration.setPasswordHash(passwordEncoder.encode(DEFAULT_OFFICER_PASSWORD));
+            officerRegistrationRepository.save(officerRegistration);
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                    "employee", toEmployeeResponse(employee),
+                    "userId", officerLoginId,
+                    "defaultPassword", DEFAULT_OFFICER_PASSWORD,
+                    "message", "Employee and officer login created successfully."
+            ));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -199,6 +229,23 @@ public class AdminEmployeeController {
                 employee.getEmail(),
                 employee.getIsActive()
         );
+    }
+
+    private static String buildOfficerLoginId(String email, String employeeCode) {
+        if (email != null && !email.trim().isEmpty()) {
+            return email.trim().toLowerCase();
+        }
+        if (employeeCode == null || employeeCode.trim().isEmpty()) {
+            throw new IllegalArgumentException("employeeCode is required");
+        }
+        return employeeCode.trim().toLowerCase() + "@officer.local";
+    }
+
+    private static String trimToFallback(String value, String fallback) {
+        if (value == null || value.trim().isEmpty()) {
+            return fallback;
+        }
+        return value.trim();
     }
 
     private static EmployeePostingResponse toPostingResponse(EmployeePosting posting) {

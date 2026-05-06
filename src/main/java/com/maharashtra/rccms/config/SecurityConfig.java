@@ -50,6 +50,10 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/auth/login", "/api/registrations/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/lookups/**").authenticated()
+                        .requestMatchers("/api/filing-applications/officer/**").hasRole("OFFICER")
+                        .requestMatchers("/api/cases/officer/**").hasRole("OFFICER")
+                        .requestMatchers("/api/filing-applications/**").hasAnyRole(
+                                "ADVOCATE", "PARTY_IN_PERSON", "PARTY_IN_PERSON_REPRESENTATIVE")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )

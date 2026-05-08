@@ -110,6 +110,45 @@ public class LandRecordsProxyController {
         return unwrapData(res);
     }
 
+    @GetMapping("/urban/mutation-detail")
+    public ResponseEntity<?> urbanMutationDetail(@RequestParam("inwardNumber") String inwardNumber) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getMutationDetailByInwardNo",
+                Map.of("inward_number", inwardNumber)
+        );
+        return unwrapDataNotFoundAsEmpty(res, "inward_number", inwardNumber);
+    }
+
+    @GetMapping("/urban/mutations")
+    public ResponseEntity<?> urbanMutations(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("ctsNo") String ctsNo
+    ) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getMutationWithRegisterInwardNoFromvcAndCTSNo",
+                Map.of("village_code", villageCode, "cts_no", ctsNo)
+        );
+        return unwrapData(res);
+    }
+
+    @GetMapping("/urban/mutation-types")
+    public ResponseEntity<?> urbanMutationTypes() {
+        JsonNode res = landRecordsClient.postForm("/epcis/getAllMutationTypeList", null);
+        return unwrapData(res);
+    }
+
+    @GetMapping("/urban/mutations/by-type")
+    public ResponseEntity<?> urbanMutationsByType(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("mutationTypeCode") String mutationTypeCode
+    ) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getMutationWithApplicationBasicDtlsOnMutationType",
+                Map.of("village_code", villageCode, "mutation_type_code", mutationTypeCode)
+        );
+        return unwrapData(res);
+    }
+
     @GetMapping("/urban/notice-nine-view")
     public ResponseEntity<?> urbanNoticeNineView(@RequestParam("inwardNumber") String inwardNumber) {
         JsonNode res = landRecordsClient.postForm(
@@ -137,6 +176,31 @@ public class LandRecordsProxyController {
             }
         }
         return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
+    }
+
+    /**
+     * Some EPCIS APIs return 404 for "not found" records.
+     * For UI stability, normalize this case to 200 with a clear payload.
+     */
+    private static ResponseEntity<?> unwrapDataNotFoundAsEmpty(JsonNode upstream, String keyName, String keyValue) {
+        int httpStatus = 200;
+        if (upstream != null && upstream.isObject()) {
+            JsonNode hs = upstream.get("httpStatus");
+            if (hs != null && hs.canConvertToInt()) {
+                httpStatus = hs.asInt(200);
+            }
+            if (httpStatus == 404) {
+                ObjectNode body = JsonNodeFactory.instance.objectNode();
+                body.put("found", false);
+                String inwardNumber = keyValue == null ? "" : keyValue.trim();
+                body.put(keyName, inwardNumber);
+                body.put("message", inwardNumber.isEmpty()
+                        ? "Mutation details are not available for the provided inward number."
+                        : "Mutation details are not available for inward number " + inwardNumber + ".");
+                return ResponseEntity.ok(body);
+            }
+        }
+        return unwrapData(upstream);
     }
 
     /**

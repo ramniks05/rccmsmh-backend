@@ -2,6 +2,7 @@ package com.maharashtra.rccms.controller;
 
 import com.maharashtra.rccms.dto.BoundaryMasterResponse;
 import com.maharashtra.rccms.dto.OfficeResponse;
+import com.maharashtra.rccms.dto.PincodeLookupResponse;
 import com.maharashtra.rccms.model.master.Department;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.Division;
@@ -14,6 +15,8 @@ import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
 import com.maharashtra.rccms.repository.SubdistrictRepository;
 import com.maharashtra.rccms.repository.TalukaRepository;
+import com.maharashtra.rccms.service.PincodeLookupService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Read-only lookup APIs for logged-in users (advocate/party/etc.)
@@ -35,17 +39,20 @@ public class LocationLookupController {
     private final SubdistrictRepository subdistrictRepository;
     private final TalukaRepository talukaRepository;
     private final OfficeRepository officeRepository;
+    private final PincodeLookupService pincodeLookupService;
 
     public LocationLookupController(
             DistrictRepository districtRepository,
             SubdistrictRepository subdistrictRepository,
             TalukaRepository talukaRepository,
-            OfficeRepository officeRepository
+            OfficeRepository officeRepository,
+            PincodeLookupService pincodeLookupService
     ) {
         this.districtRepository = districtRepository;
         this.subdistrictRepository = subdistrictRepository;
         this.talukaRepository = talukaRepository;
         this.officeRepository = officeRepository;
+        this.pincodeLookupService = pincodeLookupService;
     }
 
     /**
@@ -114,6 +121,22 @@ public class LocationLookupController {
 
         List<OfficeResponse> items = offices.stream().map(LocationLookupController::toOfficeResponse).toList();
         return ResponseEntity.ok(items);
+    }
+
+    /**
+     * Pincode-based address lookup for applicant/respondent forms.
+     * Example: /api/lookups/pincode-details?pincode=413402
+     */
+    @GetMapping("/pincode-details")
+    public ResponseEntity<?> pincodeDetails(@RequestParam("pincode") String pincode) {
+        try {
+            PincodeLookupResponse response = pincodeLookupService.lookupByPincode(pincode);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", ex.getMessage()));
+        }
     }
 
     private static BoundaryMasterResponse toDistrictResponse(District d) {

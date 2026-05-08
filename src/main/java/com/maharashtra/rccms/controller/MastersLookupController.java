@@ -1,12 +1,15 @@
 package com.maharashtra.rccms.controller;
 
 import com.maharashtra.rccms.dto.ActResponse;
+import com.maharashtra.rccms.dto.OccupationResponse;
 import com.maharashtra.rccms.dto.SectionResponse;
 import com.maharashtra.rccms.dto.OfficeResponse;
 import com.maharashtra.rccms.model.master.Act;
+import com.maharashtra.rccms.model.master.Occupation;
 import com.maharashtra.rccms.model.master.Section;
 import com.maharashtra.rccms.model.master.Office;
 import com.maharashtra.rccms.repository.ActRepository;
+import com.maharashtra.rccms.repository.OccupationRepository;
 import com.maharashtra.rccms.repository.SectionRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
 import org.springframework.http.ResponseEntity;
@@ -23,13 +26,16 @@ import java.util.List;
 public class MastersLookupController {
 
     private final ActRepository actRepository;
+    private final OccupationRepository occupationRepository;
     private final SectionRepository sectionRepository;
     private final OfficeRepository officeRepository;
 
     public MastersLookupController(ActRepository actRepository,
+                                   OccupationRepository occupationRepository,
                                    SectionRepository sectionRepository,
                                    OfficeRepository officeRepository) {
         this.actRepository = actRepository;
+        this.occupationRepository = occupationRepository;
         this.sectionRepository = sectionRepository;
         this.officeRepository = officeRepository;
     }
@@ -53,6 +59,21 @@ public class MastersLookupController {
                         .comparing((Section s) -> safe(s.getSectionCode()), String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(s -> safe(s.getSectionName()), String.CASE_INSENSITIVE_ORDER))
                 .map(this::toSectionResponse)
+                .toList();
+        return ResponseEntity.ok(items);
+    }
+
+    @GetMapping("/occupations")
+    public ResponseEntity<?> listOccupations() {
+        List<OccupationResponse> items = occupationRepository.findAll().stream()
+                .sorted(Comparator.comparing((Occupation o) -> safe(o.getName()), String.CASE_INSENSITIVE_ORDER))
+                .map(o -> new OccupationResponse(
+                        o.getId(),
+                        o.getName(),
+                        o.getLocalName(),
+                        o.getShortName(),
+                        o.getShortNameLocal()
+                ))
                 .toList();
         return ResponseEntity.ok(items);
     }

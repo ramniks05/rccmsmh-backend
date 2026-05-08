@@ -33,6 +33,9 @@ import com.maharashtra.rccms.dto.OfficeUpdateRequest;
 import com.maharashtra.rccms.dto.OfficeTypeCreateRequest;
 import com.maharashtra.rccms.dto.OfficeTypeResponse;
 import com.maharashtra.rccms.dto.OfficeTypeUpdateRequest;
+import com.maharashtra.rccms.dto.OccupationCreateRequest;
+import com.maharashtra.rccms.dto.OccupationResponse;
+import com.maharashtra.rccms.dto.OccupationUpdateRequest;
 import com.maharashtra.rccms.dto.VillageCreateRequest;
 import com.maharashtra.rccms.model.master.Act;
 import com.maharashtra.rccms.model.master.CaseCategory;
@@ -43,6 +46,7 @@ import com.maharashtra.rccms.model.master.Section;
 import com.maharashtra.rccms.model.master.Subject;
 import com.maharashtra.rccms.model.master.Office;
 import com.maharashtra.rccms.model.master.OfficeType;
+import com.maharashtra.rccms.model.master.Occupation;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.Division;
 import com.maharashtra.rccms.model.master.State;
@@ -58,6 +62,7 @@ import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.DivisionRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
 import com.maharashtra.rccms.repository.OfficeTypeRepository;
+import com.maharashtra.rccms.repository.OccupationRepository;
 import com.maharashtra.rccms.repository.SectionRepository;
 import com.maharashtra.rccms.repository.StateRepository;
 import com.maharashtra.rccms.repository.SubdistrictRepository;
@@ -95,6 +100,7 @@ public class AdminMastersController {
     private final DocumentTypeRepository documentTypeRepository;
     private final OfficeRepository officeRepository;
     private final OfficeTypeRepository officeTypeRepository;
+    private final OccupationRepository occupationRepository;
     private final StateRepository stateRepository;
     private final DivisionRepository divisionRepository;
     private final DistrictRepository districtRepository;
@@ -112,6 +118,7 @@ public class AdminMastersController {
             DocumentTypeRepository documentTypeRepository,
             OfficeRepository officeRepository,
             OfficeTypeRepository officeTypeRepository,
+            OccupationRepository occupationRepository,
             StateRepository stateRepository,
             DivisionRepository divisionRepository,
             DistrictRepository districtRepository,
@@ -128,6 +135,7 @@ public class AdminMastersController {
         this.documentTypeRepository = documentTypeRepository;
         this.officeRepository = officeRepository;
         this.officeTypeRepository = officeTypeRepository;
+        this.occupationRepository = occupationRepository;
         this.stateRepository = stateRepository;
         this.divisionRepository = divisionRepository;
         this.districtRepository = districtRepository;
@@ -207,6 +215,58 @@ public class AdminMastersController {
         Map<String, Object> body = new HashMap<>();
         body.put("deleted", true);
         body.put("id", designationId);
+        return ResponseEntity.ok(body);
+    }
+
+    @PostMapping("/occupations")
+    public ResponseEntity<?> createOccupation(@RequestBody OccupationCreateRequest request) {
+        try {
+            Occupation occupation = new Occupation();
+            applyOccupationFields(occupation, request.getName(), request.getLocalName(), request.getShortName(), request.getShortNameLocal());
+            occupation = occupationRepository.save(occupation);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toOccupationResponse(occupation));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/occupations")
+    public ResponseEntity<?> listOccupations() {
+        List<OccupationResponse> items = occupationRepository.findAll().stream()
+                .sorted((a, b) -> {
+                    String an = a.getName() == null ? "" : a.getName();
+                    String bn = b.getName() == null ? "" : b.getName();
+                    return an.compareToIgnoreCase(bn);
+                })
+                .map(AdminMastersController::toOccupationResponse)
+                .toList();
+        return ResponseEntity.ok(items);
+    }
+
+    @PutMapping("/occupations/{id}")
+    public ResponseEntity<?> updateOccupation(@PathVariable("id") Long id, @RequestBody OccupationUpdateRequest request) {
+        try {
+            Occupation occupation = occupationRepository.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid occupation id"));
+            applyOccupationFields(occupation, request.getName(), request.getLocalName(), request.getShortName(), request.getShortNameLocal());
+            occupation = occupationRepository.save(occupation);
+            return ResponseEntity.ok(toOccupationResponse(occupation));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/occupations/{id}")
+    public ResponseEntity<?> deleteOccupation(@PathVariable("id") Long id) {
+        if (!occupationRepository.existsById(id)) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("error", "Invalid occupation id");
+            return ResponseEntity.badRequest().body(body);
+        }
+        occupationRepository.deleteById(id);
+        Map<String, Object> body = new HashMap<>();
+        body.put("deleted", true);
+        body.put("id", id);
         return ResponseEntity.ok(body);
     }
 
@@ -1081,6 +1141,28 @@ public class AdminMastersController {
                 designation.getLocalName(),
                 designation.getShortName(),
                 designation.getShortNameLocal()
+        );
+    }
+
+    private static void applyOccupationFields(Occupation occupation,
+                                              String name,
+                                              String localName,
+                                              String shortName,
+                                              String shortNameLocal) {
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("name is required");
+        occupation.setName(name.trim());
+        occupation.setLocalName(localName);
+        occupation.setShortName(shortName);
+        occupation.setShortNameLocal(shortNameLocal);
+    }
+
+    private static OccupationResponse toOccupationResponse(Occupation occupation) {
+        return new OccupationResponse(
+                occupation.getId(),
+                occupation.getName(),
+                occupation.getLocalName(),
+                occupation.getShortName(),
+                occupation.getShortNameLocal()
         );
     }
 

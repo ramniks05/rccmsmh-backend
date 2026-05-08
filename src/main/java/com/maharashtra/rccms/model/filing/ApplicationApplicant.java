@@ -39,8 +39,44 @@ public class ApplicationApplicant {
     @Column(nullable = false, length = 512)
     private String name;
 
+    @Column(name = "first_name", length = 128)
+    private String firstName;
+
+    @Column(name = "middle_name", length = 128)
+    private String middleName;
+
+    @Column(name = "last_name", length = 128)
+    private String lastName;
+
+    @Column(length = 6)
+    private String pincode;
+
+    @Column(length = 255)
+    private String district;
+
+    @Column(length = 255)
+    private String taluka;
+
+    @Column(length = 255)
+    private String village;
+
+    @Column(name = "village_value", length = 512)
+    private String villageValue;
+
+    @Column(length = 255)
+    private String email;
+
     @Column(length = 32)
     private String mobile;
+
+    @Column(length = 10)
+    private String dob;
+
+    @Column(length = 16)
+    private String age;
+
+    @Column(length = 255)
+    private String occupation;
 
     @Column(length = 1024)
     private String address;
@@ -87,6 +123,102 @@ public class ApplicationApplicant {
 
     public void setMobile(String mobile) {
         this.mobile = mobile;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+    }
+
+    public String getMiddleName() {
+        return middleName;
+    }
+
+    public void setMiddleName(String middleName) {
+        this.middleName = middleName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
+    }
+
+    public String getPincode() {
+        return pincode;
+    }
+
+    public void setPincode(String pincode) {
+        this.pincode = pincode;
+    }
+
+    public String getDistrict() {
+        return district;
+    }
+
+    public void setDistrict(String district) {
+        this.district = district;
+    }
+
+    public String getTaluka() {
+        return taluka;
+    }
+
+    public void setTaluka(String taluka) {
+        this.taluka = taluka;
+    }
+
+    public String getVillage() {
+        return village;
+    }
+
+    public void setVillage(String village) {
+        this.village = village;
+    }
+
+    public String getVillageValue() {
+        return villageValue;
+    }
+
+    public void setVillageValue(String villageValue) {
+        this.villageValue = villageValue;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getDob() {
+        return dob;
+    }
+
+    public void setDob(String dob) {
+        this.dob = dob;
+    }
+
+    public String getAge() {
+        return age;
+    }
+
+    public void setAge(String age) {
+        this.age = age;
+    }
+
+    public String getOccupation() {
+        return occupation;
+    }
+
+    public void setOccupation(String occupation) {
+        this.occupation = occupation;
     }
 
     public String getAddress() {

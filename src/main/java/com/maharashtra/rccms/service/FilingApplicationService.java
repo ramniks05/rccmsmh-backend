@@ -23,6 +23,10 @@ import java.util.*;
 @SuppressWarnings("null")
 public class FilingApplicationService {
     private static final long PRESIDING_OFFICER_DESIGNATION_ID = 1L;
+    private static final String PINCODE_REGEX = "^\\d{6}$";
+    private static final String MOBILE_REGEX = "^\\d{10}$";
+    private static final String DOB_REGEX = "^\\d{4}-\\d{2}-\\d{2}$";
+    private static final String EMAIL_REGEX = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
 
     private final FilingApplicationRepository filingApplicationRepository;
     private final CaseRegistryRepository caseRegistryRepository;
@@ -116,7 +120,7 @@ public class FilingApplicationService {
         if (form != null) {
             applyFormHeader(entity, form);
             applyApplicants(entity, form.getApplicants(), status == ApplicationStatus.SUBMITTED);
-            applyRespondents(entity, form.getRespondents());
+            applyRespondents(entity, form.getRespondents(), status == ApplicationStatus.SUBMITTED);
             List<VakalatnamaGroupPayload> vakCombined = combineVakalatnama(
                     payload.getVakalatnamaAssignments(),
                     form.getVakalatnamaAssignments());
@@ -626,9 +630,41 @@ public class FilingApplicationService {
             row.setApplication(entity);
             row.setLineNo(dto.getLineNo() != null ? dto.getLineNo() : autoLine++);
             row.setClientRowKey(key != null ? key : UUID.randomUUID().toString());
-            row.setName(requiredText(dto.getName(), "Applicant name"));
+            row.setFirstName(trimToNull(dto.getFirstName()));
+            row.setMiddleName(trimToNull(dto.getMiddleName()));
+            row.setLastName(trimToNull(dto.getLastName()));
+            row.setPincode(trimToNull(dto.getPincode()));
+            row.setDistrict(trimToNull(dto.getDistrict()));
+            row.setTaluka(trimToNull(dto.getTaluka()));
+            row.setVillage(trimToNull(dto.getVillage()));
+            row.setVillageValue(trimToNull(dto.getVillageValue()));
+            row.setEmail(trimToNull(dto.getEmail()));
             row.setMobile(trimToNull(dto.getMobile()));
+            row.setDob(trimToNull(dto.getDob()));
+            row.setAge(trimToNull(dto.getAge()));
+            row.setOccupation(trimToNull(dto.getOccupation()));
             row.setAddress(trimToNull(dto.getAddress()));
+            row.setName(buildCompatibleFullName(
+                    row.getFirstName(),
+                    row.getMiddleName(),
+                    row.getLastName(),
+                    trimToNull(dto.getName())
+            ));
+            if (submit) {
+                validatePartyRow(
+                        "Applicant",
+                        row.getFirstName(),
+                        row.getLastName(),
+                        row.getPincode(),
+                        row.getDistrict(),
+                        row.getTaluka(),
+                        row.getVillage(),
+                        row.getAddress(),
+                        row.getEmail(),
+                        row.getMobile(),
+                        row.getDob()
+                );
+            }
             entity.getApplicants().add(row);
         }
     }
@@ -643,7 +679,11 @@ public class FilingApplicationService {
         return null;
     }
 
-    private void applyRespondents(FilingApplication entity, List<RespondentRowPayload> payloads) {
+    private void applyRespondents(
+            FilingApplication entity,
+            List<RespondentRowPayload> payloads,
+            boolean submit
+    ) {
         if (payloads == null) {
             return;
         }
@@ -652,12 +692,55 @@ public class FilingApplicationService {
             ApplicationRespondent row = new ApplicationRespondent();
             row.setApplication(entity);
             row.setLineNo(dto.getLineNo() != null ? dto.getLineNo() : autoLine++);
-            row.setClientRowKey(trimToNull(dto.getClientRowKey()));
-            row.setName(requiredText(dto.getName(), "Respondent name"));
+            String key = respondentClientKey(dto);
+            row.setClientRowKey(key != null ? key : UUID.randomUUID().toString());
+            row.setFirstName(trimToNull(dto.getFirstName()));
+            row.setMiddleName(trimToNull(dto.getMiddleName()));
+            row.setLastName(trimToNull(dto.getLastName()));
+            row.setPincode(trimToNull(dto.getPincode()));
+            row.setDistrict(trimToNull(dto.getDistrict()));
+            row.setTaluka(trimToNull(dto.getTaluka()));
+            row.setVillage(trimToNull(dto.getVillage()));
+            row.setVillageValue(trimToNull(dto.getVillageValue()));
+            row.setEmail(trimToNull(dto.getEmail()));
             row.setMobile(trimToNull(dto.getMobile()));
+            row.setDob(trimToNull(dto.getDob()));
+            row.setAge(trimToNull(dto.getAge()));
+            row.setOccupation(trimToNull(dto.getOccupation()));
             row.setAddress(trimToNull(dto.getAddress()));
+            row.setName(buildCompatibleFullName(
+                    row.getFirstName(),
+                    row.getMiddleName(),
+                    row.getLastName(),
+                    trimToNull(dto.getName())
+            ));
+            if (submit) {
+                validatePartyRow(
+                        "Respondent",
+                        row.getFirstName(),
+                        row.getLastName(),
+                        row.getPincode(),
+                        row.getDistrict(),
+                        row.getTaluka(),
+                        row.getVillage(),
+                        row.getAddress(),
+                        row.getEmail(),
+                        row.getMobile(),
+                        row.getDob()
+                );
+            }
             entity.getRespondents().add(row);
         }
+    }
+
+    private static String respondentClientKey(RespondentRowPayload r) {
+        if (hasText(r.getClientRowKey())) {
+            return r.getClientRowKey().trim();
+        }
+        if (hasText(r.getTempId())) {
+            return r.getTempId().trim();
+        }
+        return null;
     }
 
     private void applyDisputedOrder(FilingApplication app, ApplicationDisputedOrderPayload p) {
@@ -1157,7 +1240,19 @@ public class FilingApplicationService {
             dto.setClientRowKey(row.getClientRowKey());
             dto.setTempId(row.getClientRowKey());
             dto.setName(row.getName());
+            dto.setFirstName(row.getFirstName());
+            dto.setMiddleName(row.getMiddleName());
+            dto.setLastName(row.getLastName());
+            dto.setPincode(row.getPincode());
+            dto.setDistrict(row.getDistrict());
+            dto.setTaluka(row.getTaluka());
+            dto.setVillage(row.getVillage());
+            dto.setVillageValue(row.getVillageValue());
+            dto.setEmail(row.getEmail());
             dto.setMobile(row.getMobile());
+            dto.setDob(row.getDob());
+            dto.setAge(row.getAge());
+            dto.setOccupation(row.getOccupation());
             dto.setAddress(row.getAddress());
             out.add(dto);
         }
@@ -1173,12 +1268,79 @@ public class FilingApplicationService {
             RespondentRowPayload dto = new RespondentRowPayload();
             dto.setLineNo(row.getLineNo());
             dto.setClientRowKey(row.getClientRowKey());
+            dto.setTempId(row.getClientRowKey());
             dto.setName(row.getName());
+            dto.setFirstName(row.getFirstName());
+            dto.setMiddleName(row.getMiddleName());
+            dto.setLastName(row.getLastName());
+            dto.setPincode(row.getPincode());
+            dto.setDistrict(row.getDistrict());
+            dto.setTaluka(row.getTaluka());
+            dto.setVillage(row.getVillage());
+            dto.setVillageValue(row.getVillageValue());
+            dto.setEmail(row.getEmail());
             dto.setMobile(row.getMobile());
+            dto.setDob(row.getDob());
+            dto.setAge(row.getAge());
+            dto.setOccupation(row.getOccupation());
             dto.setAddress(row.getAddress());
             out.add(dto);
         }
         return out;
+    }
+
+    private static String buildCompatibleFullName(String firstName, String middleName, String lastName, String fallbackName) {
+        String fn = trimToNull(firstName);
+        String mn = trimToNull(middleName);
+        String ln = trimToNull(lastName);
+        String fromParts = String.join(" ",
+                fn == null ? "" : fn,
+                mn == null ? "" : mn,
+                ln == null ? "" : ln).trim();
+        if (hasText(fromParts)) {
+            return fromParts;
+        }
+        return requiredText(fallbackName, "name");
+    }
+
+    private static void validatePartyRow(
+            String label,
+            String firstName,
+            String lastName,
+            String pincode,
+            String district,
+            String taluka,
+            String village,
+            String address,
+            String email,
+            String mobile,
+            String dob
+    ) {
+        requiredText(firstName, label + " firstName");
+        requiredText(lastName, label + " lastName");
+        String pin = requiredText(pincode, label + " pincode");
+        if (!pin.matches(PINCODE_REGEX)) {
+            throw new IllegalArgumentException(label + " pincode must be 6 digits.");
+        }
+        requiredText(district, label + " district");
+        requiredText(taluka, label + " taluka");
+        requiredText(village, label + " village");
+        String addr = requiredText(address, label + " address");
+        if (addr.length() < 5) {
+            throw new IllegalArgumentException(label + " address must be at least 5 characters.");
+        }
+        String mob = requiredText(mobile, label + " mobile");
+        if (!mob.matches(MOBILE_REGEX)) {
+            throw new IllegalArgumentException(label + " mobile must be 10 digits.");
+        }
+        String em = trimToNull(email);
+        if (em != null && !em.matches(EMAIL_REGEX)) {
+            throw new IllegalArgumentException(label + " email is invalid.");
+        }
+        String dobText = trimToNull(dob);
+        if (dobText != null && !dobText.matches(DOB_REGEX)) {
+            throw new IllegalArgumentException(label + " dob must be YYYY-MM-DD.");
+        }
     }
 
     private static List<DisputedLandPayload> toDisputedLandPayloads(List<ApplicationDisputedLand> rows) {

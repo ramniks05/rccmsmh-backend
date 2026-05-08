@@ -49,6 +49,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/auth/login", "/api/registrations/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/lookups/pincode-details").hasAnyRole(
+                                "ADMIN", "ADVOCATE", "PARTY_IN_PERSON", "PARTY_IN_PERSON_REPRESENTATIVE", "OFFICER")
                         .requestMatchers(HttpMethod.GET, "/api/lookups/**").authenticated()
                         .requestMatchers("/api/filing-applications/officer/**").hasRole("OFFICER")
                         .requestMatchers("/api/cases/officer/**").hasRole("OFFICER")

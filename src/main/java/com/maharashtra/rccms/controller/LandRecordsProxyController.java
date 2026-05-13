@@ -8,11 +8,14 @@ import com.maharashtra.rccms.service.LandRecordsClient;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -110,13 +113,61 @@ public class LandRecordsProxyController {
         return unwrapData(res);
     }
 
+    /**
+     * Sub-CTS numbers for a village and parent CTS (upstream: POST /epcis/getSubCTSNoList).
+     */
+    @GetMapping("/urban/sub-cts-list")
+    public ResponseEntity<?> urbanSubCtsList(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("ctsNo") String ctsNo
+    ) {
+        return urbanSubCtsListInternal(villageCode, ctsNo);
+    }
+
+    @PostMapping("/urban/sub-cts-list")
+    public ResponseEntity<?> urbanSubCtsListPost(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("ctsNo") String ctsNo
+    ) {
+        return urbanSubCtsListInternal(villageCode, ctsNo);
+    }
+
+    private ResponseEntity<?> urbanSubCtsListInternal(String villageCode, String ctsNo) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getSubCTSNoList",
+                Map.of("village_code", villageCode, "cts_no", ctsNo)
+        );
+        return unwrapData(res);
+    }
+
     @GetMapping("/urban/mutation-detail")
     public ResponseEntity<?> urbanMutationDetail(@RequestParam("inwardNumber") String inwardNumber) {
+        return urbanMutationDetailInternal(inwardNumber);
+    }
+
+    @PostMapping("/urban/mutation-detail")
+    public ResponseEntity<?> urbanMutationDetailPost(@RequestParam("inwardNumber") String inwardNumber) {
+        return urbanMutationDetailInternal(inwardNumber);
+    }
+
+    private ResponseEntity<?> urbanMutationDetailInternal(String inwardNumber) {
         JsonNode res = landRecordsClient.postForm(
-                "/epcis/getMutationDetailByInwardNo",
+                "/epcis/getMutationDetailsByInwardNo",
                 Map.of("inward_number", inwardNumber)
         );
-        return unwrapDataNotFoundAsEmpty(res, "inward_number", inwardNumber);
+        if (extractHttpStatus(res) == 404) {
+            res = landRecordsClient.postForm(
+                    "/epcis/getMutationDetailsByInwardNo",
+                    Map.of("inward_no", inwardNumber)
+            );
+        }
+        if (extractHttpStatus(res) == 404) {
+            res = landRecordsClient.postForm(
+                    "/epcis/getMutationDetailsByInwardNo",
+                    Map.of("inwardNumber", inwardNumber)
+            );
+        }
+        return ResponseEntity.ok(res);
     }
 
     @GetMapping("/urban/mutations")
@@ -129,6 +180,105 @@ public class LandRecordsProxyController {
                 Map.of("village_code", villageCode, "cts_no", ctsNo)
         );
         return unwrapData(res);
+    }
+
+    /**
+     * Mutations with applicant details for a village + CTS (upstream: POST /epcis/getMutationWithApplicantBasedOnCTSNo).
+     * Request: {@code village_code}, {@code cts_no}. Response {@code data} items include {@code inward_number}.
+     */
+    @GetMapping("/urban/mutations/applicant-by-cts")
+    public ResponseEntity<?> urbanMutationsApplicantByCts(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("ctsNo") String ctsNo
+    ) {
+        return urbanMutationsApplicantByCtsInternal(villageCode, ctsNo);
+    }
+
+    @PostMapping("/urban/mutations/applicant-by-cts")
+    public ResponseEntity<?> urbanMutationsApplicantByCtsPost(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("ctsNo") String ctsNo
+    ) {
+        return urbanMutationsApplicantByCtsInternal(villageCode, ctsNo);
+    }
+
+    private ResponseEntity<?> urbanMutationsApplicantByCtsInternal(String villageCode, String ctsNo) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getMutationWithApplicantBasedOnCTSNo",
+                Map.of("village_code", villageCode, "cts_no", ctsNo)
+        );
+        return unwrapData(res);
+    }
+
+    /**
+     * Same upstream as {@link #urbanMutationsApplicantByCtsInternal}, but returns only inward number(s) from {@code data}.
+     */
+    @GetMapping("/urban/mutations/applicant-by-cts/inward-numbers")
+    public ResponseEntity<?> urbanMutationsApplicantByCtsInwardNumbers(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("ctsNo") String ctsNo
+    ) {
+        return urbanMutationsApplicantByCtsInwardNumbersInternal(villageCode, ctsNo);
+    }
+
+    @PostMapping("/urban/mutations/applicant-by-cts/inward-numbers")
+    public ResponseEntity<?> urbanMutationsApplicantByCtsInwardNumbersPost(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("ctsNo") String ctsNo
+    ) {
+        return urbanMutationsApplicantByCtsInwardNumbersInternal(villageCode, ctsNo);
+    }
+
+    private ResponseEntity<?> urbanMutationsApplicantByCtsInwardNumbersInternal(String villageCode, String ctsNo) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getMutationWithApplicantBasedOnCTSNo",
+                Map.of("village_code", villageCode, "cts_no", ctsNo)
+        );
+        List<String> inwardNumbers = extractInwardNumbersFromUpstreamData(res);
+        ObjectNode body = JsonNodeFactory.instance.objectNode();
+        ArrayNode arr = JsonNodeFactory.instance.arrayNode();
+        for (String n : inwardNumbers) {
+            arr.add(n);
+        }
+        body.set("inwardNumbers", arr);
+        if (!inwardNumbers.isEmpty()) {
+            body.put("inwardNumber", inwardNumbers.get(0));
+        } else {
+            body.putNull("inwardNumber");
+        }
+        return ResponseEntity.ok(body);
+    }
+
+    private static List<String> extractInwardNumbersFromUpstreamData(JsonNode upstream) {
+        List<String> out = new ArrayList<>();
+        if (upstream == null || !upstream.isObject()) {
+            return out;
+        }
+        JsonNode data = upstream.get("data");
+        if (data == null || data.isNull()) {
+            return out;
+        }
+        if (data.isArray()) {
+            for (JsonNode item : data) {
+                addInwardNumberIfPresent(item, out);
+            }
+        } else {
+            addInwardNumberIfPresent(data, out);
+        }
+        return out;
+    }
+
+    private static void addInwardNumberIfPresent(JsonNode item, List<String> out) {
+        if (item == null || !item.isObject()) {
+            return;
+        }
+        JsonNode in = item.get("inward_number");
+        if (in != null && in.isTextual()) {
+            String s = in.asText().trim();
+            if (!s.isEmpty()) {
+                out.add(s);
+            }
+        }
     }
 
     @GetMapping("/urban/mutation-types")
@@ -178,29 +328,18 @@ public class LandRecordsProxyController {
         return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
     }
 
-    /**
-     * Some EPCIS APIs return 404 for "not found" records.
-     * For UI stability, normalize this case to 200 with a clear payload.
-     */
-    private static ResponseEntity<?> unwrapDataNotFoundAsEmpty(JsonNode upstream, String keyName, String keyValue) {
-        int httpStatus = 200;
+    private static int extractHttpStatus(JsonNode upstream) {
         if (upstream != null && upstream.isObject()) {
             JsonNode hs = upstream.get("httpStatus");
             if (hs != null && hs.canConvertToInt()) {
-                httpStatus = hs.asInt(200);
+                return hs.asInt(200);
             }
-            if (httpStatus == 404) {
-                ObjectNode body = JsonNodeFactory.instance.objectNode();
-                body.put("found", false);
-                String inwardNumber = keyValue == null ? "" : keyValue.trim();
-                body.put(keyName, inwardNumber);
-                body.put("message", inwardNumber.isEmpty()
-                        ? "Mutation details are not available for the provided inward number."
-                        : "Mutation details are not available for inward number " + inwardNumber + ".");
-                return ResponseEntity.ok(body);
+            JsonNode status = upstream.get("status");
+            if (status != null && status.canConvertToInt()) {
+                return status.asInt(200);
             }
         }
-        return unwrapData(upstream);
+        return 200;
     }
 
     /**

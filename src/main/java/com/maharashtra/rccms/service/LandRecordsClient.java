@@ -17,6 +17,8 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -40,6 +42,8 @@ import java.util.List;
 @Service
 @SuppressWarnings("null")
 public class LandRecordsClient {
+
+    private static final Logger log = LoggerFactory.getLogger(LandRecordsClient.class);
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
@@ -84,13 +88,17 @@ public class LandRecordsClient {
         }
 
         HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(form, headers);
+        log.info("LandRecords upstream request: method=POST url={} form={}", url, form);
 
         try {
             ResponseEntity<String> res = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
+            log.info("LandRecords upstream response: method=POST url={} httpStatus={}", url, res.getStatusCode().value());
             return handleUpstreamResponse(res.getStatusCode().value(), res.getBody(), decodeResponseData);
         } catch (HttpStatusCodeException ex) {
+            log.info("LandRecords upstream response: method=POST url={} httpStatus={}", url, ex.getStatusCode().value());
             return handleUpstreamResponse(ex.getStatusCode().value(), ex.getResponseBodyAsString(), decodeResponseData);
         } catch (RestClientException ex) {
+            log.error("LandRecords upstream call failed: method=POST url={} error={}", url, ex.getMessage());
             return errorNode(500, "Upstream call failed: " + ex.getMessage());
         }
     }

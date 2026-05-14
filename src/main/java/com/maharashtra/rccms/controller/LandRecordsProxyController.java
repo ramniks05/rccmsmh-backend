@@ -287,6 +287,9 @@ public class LandRecordsProxyController {
         return unwrapData(res);
     }
 
+    /**
+     * Application basic details by mutation type (upstream differs from applicant list below).
+     */
     @GetMapping("/urban/mutations/by-type")
     public ResponseEntity<?> urbanMutationsByType(
             @RequestParam("villageCode") String villageCode,
@@ -297,6 +300,76 @@ public class LandRecordsProxyController {
                 Map.of("village_code", villageCode, "mutation_type_code", mutationTypeCode)
         );
         return unwrapData(res);
+    }
+
+    /**
+     * Mutations with applicant details by village + mutation type (upstream: POST /epcis/getMutationWithApplicantBasedOnMutationType).
+     * Form: {@code village_code}, {@code mutation_type_code}.
+     */
+    @GetMapping("/urban/mutations/applicant-by-type")
+    public ResponseEntity<?> urbanMutationsApplicantByType(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("mutationTypeCode") String mutationTypeCode
+    ) {
+        return urbanMutationsApplicantByTypeInternal(villageCode, mutationTypeCode);
+    }
+
+    @PostMapping("/urban/mutations/applicant-by-type")
+    public ResponseEntity<?> urbanMutationsApplicantByTypePost(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("mutationTypeCode") String mutationTypeCode
+    ) {
+        return urbanMutationsApplicantByTypeInternal(villageCode, mutationTypeCode);
+    }
+
+    private ResponseEntity<?> urbanMutationsApplicantByTypeInternal(
+            String villageCode,
+            String mutationTypeCode
+    ) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getMutationWithApplicantBasedOnMutationType",
+                Map.of("village_code", villageCode, "mutation_type_code", mutationTypeCode)
+        );
+        return unwrapData(res);
+    }
+
+    @GetMapping("/urban/mutations/applicant-by-type/inward-numbers")
+    public ResponseEntity<?> urbanMutationsApplicantByTypeInwardNumbers(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("mutationTypeCode") String mutationTypeCode
+    ) {
+        return urbanMutationsApplicantByTypeInwardNumbersInternal(villageCode, mutationTypeCode);
+    }
+
+    @PostMapping("/urban/mutations/applicant-by-type/inward-numbers")
+    public ResponseEntity<?> urbanMutationsApplicantByTypeInwardNumbersPost(
+            @RequestParam("villageCode") String villageCode,
+            @RequestParam("mutationTypeCode") String mutationTypeCode
+    ) {
+        return urbanMutationsApplicantByTypeInwardNumbersInternal(villageCode, mutationTypeCode);
+    }
+
+    private ResponseEntity<?> urbanMutationsApplicantByTypeInwardNumbersInternal(
+            String villageCode,
+            String mutationTypeCode
+    ) {
+        JsonNode res = landRecordsClient.postForm(
+                "/epcis/getMutationWithApplicantBasedOnMutationType",
+                Map.of("village_code", villageCode, "mutation_type_code", mutationTypeCode)
+        );
+        List<String> inwardNumbers = extractInwardNumbersFromUpstreamData(res);
+        ObjectNode body = JsonNodeFactory.instance.objectNode();
+        ArrayNode arr = JsonNodeFactory.instance.arrayNode();
+        for (String n : inwardNumbers) {
+            arr.add(n);
+        }
+        body.set("inwardNumbers", arr);
+        if (!inwardNumbers.isEmpty()) {
+            body.put("inwardNumber", inwardNumbers.get(0));
+        } else {
+            body.putNull("inwardNumber");
+        }
+        return ResponseEntity.ok(body);
     }
 
     @GetMapping("/urban/notice-nine-view")

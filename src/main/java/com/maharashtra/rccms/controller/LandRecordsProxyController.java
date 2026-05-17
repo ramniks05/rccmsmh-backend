@@ -288,6 +288,28 @@ public class LandRecordsProxyController {
     }
 
     /**
+     * Generic property details lookup (upstream: POST /epcis/getPropertyDetails).
+     * Accepts request params as-is from frontend so UI can pass evolving key names.
+     */
+    @GetMapping("/urban/property-details")
+    public ResponseEntity<?> urbanPropertyDetailsGet(@RequestParam Map<String, String> params) {
+        return urbanPropertyDetailsInternal(params);
+    }
+
+    @PostMapping("/urban/property-details")
+    public ResponseEntity<?> urbanPropertyDetailsPost(@RequestParam Map<String, String> params) {
+        return urbanPropertyDetailsInternal(params);
+    }
+
+    private ResponseEntity<?> urbanPropertyDetailsInternal(Map<String, String> params) {
+        if (params == null || params.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "At least one request parameter is required."));
+        }
+        JsonNode res = landRecordsClient.postForm("/epcis/getPropertyDetails", params);
+        return unwrapData(res);
+    }
+
+    /**
      * Application basic details by mutation type (upstream differs from applicant list below).
      */
     @GetMapping("/urban/mutations/by-type")
@@ -393,6 +415,9 @@ public class LandRecordsProxyController {
             if (hs != null && hs.canConvertToInt()) {
                 httpStatus = hs.asInt(200);
             }
+            if (httpStatus >= 400) {
+                return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
+            }
             JsonNode data = upstream.get("data");
             if (data != null && !data.isNull()) {
                 return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(moveSearchFieldFirst(data));
@@ -425,6 +450,9 @@ public class LandRecordsProxyController {
             JsonNode hs = upstream.get("httpStatus");
             if (hs != null && hs.canConvertToInt()) {
                 httpStatus = hs.asInt(200);
+            }
+            if (httpStatus >= 400) {
+                return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
             }
 
             JsonNode data = upstream.get("data");

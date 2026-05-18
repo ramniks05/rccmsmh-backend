@@ -17,8 +17,11 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.net.URI;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -51,6 +54,10 @@ public class LandRecordsClient {
     private final String bearerToken;
     private final String apiKey;
     private final String secretKey;
+    private final String g2bBaseUrl;
+    private final String g2bWebserviceId;
+    private final String g2bWsUserId;
+    private final String g2bPassword;
 
     public LandRecordsClient(
             RestTemplate restTemplate,
@@ -58,7 +65,11 @@ public class LandRecordsClient {
             @Value("${rccms.land-records.base-url:https://api.mahabhumi.gov.in/api}") String baseUrl,
             @Value("${rccms.land-records.bearer-token:}") String bearerToken,
             @Value("${rccms.land-records.api-key:}") String apiKey,
-            @Value("${rccms.land-records.secret-key:}") String secretKey
+            @Value("${rccms.land-records.secret-key:}") String secretKey,
+            @Value("${rccms.land-records.g2b.base-url:https://g2b.mahabhumi.gov.in/REST_API}") String g2bBaseUrl,
+            @Value("${rccms.land-records.g2b.webservice-id:}") String g2bWebserviceId,
+            @Value("${rccms.land-records.g2b.ws-user-id:}") String g2bWsUserId,
+            @Value("${rccms.land-records.g2b.password:}") String g2bPassword
     ) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
@@ -66,6 +77,92 @@ public class LandRecordsClient {
         this.bearerToken = bearerToken;
         this.apiKey = apiKey;
         this.secretKey = secretKey;
+        this.g2bBaseUrl = stripTrailingSlash(g2bBaseUrl);
+        this.g2bWebserviceId = g2bWebserviceId == null ? "" : g2bWebserviceId.trim();
+        this.g2bWsUserId = g2bWsUserId == null ? "" : g2bWsUserId.trim();
+        this.g2bPassword = g2bPassword == null ? "" : g2bPassword.trim();
+    }
+
+    /**
+     * G2B REST API: GET /home/GetLandDetailSurvyWise (7/12 land detail by village LGD + survey pins).
+     * Uses {@code Webservice_id}, {@code wsuser_id}, {@code password} query auth (not Bearer).
+     */
+    public JsonNode getG2bLandDetailSurvyWise(String lgdCode, String pin, String pin1, String pin2) {
+        if (g2bWebserviceId.isBlank() || g2bWsUserId.isBlank() || g2bPassword.isBlank()) {
+            return errorNode(500, "G2B land-records credentials are not configured on the server.");
+        }
+        if (lgdCode == null || lgdCode.isBlank()) {
+            return errorNode(400, "Lgd_code (village LGD) is required.");
+        }
+        if (pin == null || pin.isBlank()) {
+            return errorNode(400, "pin (survey number) is required.");
+        }
+
+        UriComponentsBuilder builder = UriComponentsBuilder
+                .fromHttpUrl(g2bBaseUrl + "/home/GetLandDetailSurvyWise")
+                .queryParam("Webservice_id", g2bWebserviceId)
+                .queryParam("wsuser_id", g2bWsUserId)
+                .queryParam("password", g2bPassword)
+                .queryParam("Lgd_code", lgdCode.trim())
+                .queryParam("pin", pin.trim());
+        if (pin1 != null && !pin1.isBlank()) {
+            builder.queryParam("pin1", pin1.trim());
+        }
+        if (pin2 != null && !pin2.isBlank()) {
+            builder.queryParam("pin2", pin2.trim());
+        }
+
+        URI url = builder.build().encode().toUri();
+        log.info("LandRecords G2B upstream request: method=GET url={}", url);
+
+        try {
+            ResponseEntity<String> res = restTemplate.exchange(url, HttpMethod.GET, HttpEntity.EMPTY, String.class);
+            int httpStatus = res.getStatusCode().value();
+            log.info("LandRecords G2B upstream response: method=GET url={} httpStatus={}", url, httpStatus);
+            return parseG2bLandDetailResponse(httpStatus, res.getBody());
+        } catch (HttpStatusCodeException ex) {
+            log.info("LandRecords G2B upstream response: method=GET url={} httpStatus={}", url, ex.getStatusCode().value());
+            return parseG2bLandDetailResponse(ex.getStatusCode().value(), ex.getResponseBodyAsString());
+        } catch (RestClientException ex) {
+            log.error("LandRecords G2B upstream call failed: method=GET url={} error={}", url, ex.getMessage());
+            return errorNode(500, "G2B upstream call failed: " + ex.getMessage());
+        }
+    }
+
+    private JsonNode parseG2bLandDetailResponse(int httpStatus, String body) {
+        if (body == null || body.isBlank()) {
+            return errorNode(httpStatus, "Empty response from G2B upstream");
+        }
+
+        String trimmed = body.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            try {
+                JsonNode root = objectMapper.readTree(trimmed);
+                if (root.isObject()) {
+                    ObjectNode copy = ((ObjectNode) root).deepCopy();
+                    copy.put("httpStatus", httpStatus);
+                    return copy;
+                }
+                ObjectNode out = objectMapper.createObjectNode();
+                out.put("httpStatus", httpStatus);
+                out.set("Land_Detail", root);
+                return out;
+            } catch (Exception ex) {
+                return errorNode(httpStatus, "G2B upstream returned invalid JSON");
+            }
+        }
+
+        ObjectNode out = objectMapper.createObjectNode();
+        out.put("httpStatus", httpStatus);
+        out.put("message", trimmed);
+        if (trimmed.toLowerCase().contains("not found") || trimmed.toLowerCase().startsWith("error")) {
+            out.put("status", 404);
+            out.set("Land_Detail", objectMapper.createArrayNode());
+        } else {
+            out.put("status", httpStatus);
+            out.put("raw", trimmed);
+        }
+        return out;
     }
 
     public JsonNode postForm(String path, Map<String, String> formFields) {

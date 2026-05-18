@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.maharashtra.rccms.service.LandRecordsClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,9 +30,17 @@ import java.util.Map;
 public class LandRecordsProxyController {
 
     private final LandRecordsClient landRecordsClient;
+    private final String satbaraPdfPath;
+    private final String satbaraPdfFallbackPath;
 
-    public LandRecordsProxyController(LandRecordsClient landRecordsClient) {
+    public LandRecordsProxyController(
+            LandRecordsClient landRecordsClient,
+            @Value("${rccms.land-records.rural.satbara-pdf-path:/eferfar/getSatbaraPDF}") String satbaraPdfPath,
+            @Value("${rccms.land-records.rural.satbara-pdf-fallback-path:/eferfar/getDigitallySignedSatbaraPDF}") String satbaraPdfFallbackPath
+    ) {
         this.landRecordsClient = landRecordsClient;
+        this.satbaraPdfPath = satbaraPdfPath;
+        this.satbaraPdfFallbackPath = satbaraPdfFallbackPath;
     }
 
     // Rural (7/12)
@@ -72,6 +82,197 @@ public class LandRecordsProxyController {
                 Map.of("lgd_code", villageLgdCode, "pin", pin)
         );
         return unwrapData(res);
+    }
+
+    /**
+     * Rural 7/12 land detail by survey (G2B: GET /home/GetLandDetailSurvyWise).
+     * Upstream uses {@code Lgd_code}, {@code pin}, {@code pin1}, {@code pin2}.
+     */
+    @GetMapping("/rural/land-detail-survey-wise")
+    public ResponseEntity<?> ruralLandDetailSurveyWise(
+            @RequestParam("villageLgdCode") String villageLgdCode,
+            @RequestParam("pin") String pin,
+            @RequestParam(name = "pin1", required = false) String pin1,
+            @RequestParam(name = "pin2", required = false) String pin2
+    ) {
+        return ruralLandDetailSurveyWiseInternal(villageLgdCode, pin, pin1, pin2);
+    }
+
+    @PostMapping("/rural/land-detail-survey-wise")
+    public ResponseEntity<?> ruralLandDetailSurveyWisePost(
+            @RequestParam("villageLgdCode") String villageLgdCode,
+            @RequestParam("pin") String pin,
+            @RequestParam(name = "pin1", required = false) String pin1,
+            @RequestParam(name = "pin2", required = false) String pin2
+    ) {
+        return ruralLandDetailSurveyWiseInternal(villageLgdCode, pin, pin1, pin2);
+    }
+
+    private ResponseEntity<?> ruralLandDetailSurveyWiseInternal(
+            String villageLgdCode,
+            String pin,
+            String pin1,
+            String pin2
+    ) {
+        JsonNode res = landRecordsClient.getG2bLandDetailSurvyWise(villageLgdCode, pin, pin1, pin2);
+        return unwrapG2bLandDetail(res);
+    }
+
+    /**
+     * Check whether Satbara is digitally signed (upstream: POST /eferfar/checkIfSatbaraIsDigitallySigned).
+     */
+    @GetMapping("/rural/check-digitally-signed-satbara")
+    public ResponseEntity<?> ruralCheckDigitallySignedSatbara(
+            @RequestParam("villageLgdCode") String villageLgdCode,
+            @RequestParam("pin") String pin,
+            @RequestParam(name = "pin1", required = false) String pin1,
+            @RequestParam(name = "pin2", required = false) String pin2,
+            @RequestParam(name = "pin3", required = false) String pin3,
+            @RequestParam(name = "pin4", required = false) String pin4,
+            @RequestParam(name = "pin5", required = false) String pin5,
+            @RequestParam(name = "pin6", required = false) String pin6,
+            @RequestParam(name = "pin7", required = false) String pin7,
+            @RequestParam(name = "pin8", required = false) String pin8
+    ) {
+        return ruralCheckDigitallySignedSatbaraInternal(
+                villageLgdCode, pin, pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8
+        );
+    }
+
+    @PostMapping("/rural/check-digitally-signed-satbara")
+    public ResponseEntity<?> ruralCheckDigitallySignedSatbaraPost(
+            @RequestParam("villageLgdCode") String villageLgdCode,
+            @RequestParam("pin") String pin,
+            @RequestParam(name = "pin1", required = false) String pin1,
+            @RequestParam(name = "pin2", required = false) String pin2,
+            @RequestParam(name = "pin3", required = false) String pin3,
+            @RequestParam(name = "pin4", required = false) String pin4,
+            @RequestParam(name = "pin5", required = false) String pin5,
+            @RequestParam(name = "pin6", required = false) String pin6,
+            @RequestParam(name = "pin7", required = false) String pin7,
+            @RequestParam(name = "pin8", required = false) String pin8
+    ) {
+        return ruralCheckDigitallySignedSatbaraInternal(
+                villageLgdCode, pin, pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8
+        );
+    }
+
+    /**
+     * Digitally signed Satbara PDF view (same response shape as {@link #urbanNoticeNineView}).
+     * Upstream: POST /eferfar/getSatbaraPDF (configurable).
+     */
+    @GetMapping({"/rural/satbara-pdf-view", "/rural/digitally-signed-satbara-pdf"})
+    public ResponseEntity<?> ruralSatbaraPdfView(
+            @RequestParam("villageLgdCode") String villageLgdCode,
+            @RequestParam("pin") String pin,
+            @RequestParam(name = "pin1", required = false) String pin1,
+            @RequestParam(name = "pin2", required = false) String pin2,
+            @RequestParam(name = "pin3", required = false) String pin3,
+            @RequestParam(name = "pin4", required = false) String pin4,
+            @RequestParam(name = "pin5", required = false) String pin5,
+            @RequestParam(name = "pin6", required = false) String pin6,
+            @RequestParam(name = "pin7", required = false) String pin7,
+            @RequestParam(name = "pin8", required = false) String pin8
+    ) {
+        return ruralSatbaraPdfViewInternal(
+                villageLgdCode, pin, pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8
+        );
+    }
+
+    @PostMapping({"/rural/satbara-pdf-view", "/rural/digitally-signed-satbara-pdf"})
+    public ResponseEntity<?> ruralSatbaraPdfViewPost(
+            @RequestParam("villageLgdCode") String villageLgdCode,
+            @RequestParam("pin") String pin,
+            @RequestParam(name = "pin1", required = false) String pin1,
+            @RequestParam(name = "pin2", required = false) String pin2,
+            @RequestParam(name = "pin3", required = false) String pin3,
+            @RequestParam(name = "pin4", required = false) String pin4,
+            @RequestParam(name = "pin5", required = false) String pin5,
+            @RequestParam(name = "pin6", required = false) String pin6,
+            @RequestParam(name = "pin7", required = false) String pin7,
+            @RequestParam(name = "pin8", required = false) String pin8
+    ) {
+        return ruralSatbaraPdfViewInternal(
+                villageLgdCode, pin, pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8
+        );
+    }
+
+    private ResponseEntity<?> ruralCheckDigitallySignedSatbaraInternal(
+            String villageLgdCode,
+            String pin,
+            String pin1,
+            String pin2,
+            String pin3,
+            String pin4,
+            String pin5,
+            String pin6,
+            String pin7,
+            String pin8
+    ) {
+        JsonNode res = landRecordsClient.postForm(
+                "/eferfar/checkIfSatbaraIsDigitallySigned",
+                satbaraPinForm(villageLgdCode, pin, pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8)
+        );
+        return unwrapData(res);
+    }
+
+    private ResponseEntity<?> ruralSatbaraPdfViewInternal(
+            String villageLgdCode,
+            String pin,
+            String pin1,
+            String pin2,
+            String pin3,
+            String pin4,
+            String pin5,
+            String pin6,
+            String pin7,
+            String pin8
+    ) {
+        Map<String, String> form = satbaraPinForm(
+                villageLgdCode, pin, pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8
+        );
+        JsonNode res = landRecordsClient.postForm(satbaraPdfPath, form);
+        if (isUpstreamHttpNotFound(res) && satbaraPdfFallbackPath != null && !satbaraPdfFallbackPath.isBlank()
+                && !satbaraPdfFallbackPath.equals(satbaraPdfPath)) {
+            res = landRecordsClient.postForm(satbaraPdfFallbackPath, form);
+        }
+        return unwrapSatbaraPdf(res);
+    }
+
+    private static Map<String, String> satbaraPinForm(
+            String villageLgdCode,
+            String pin,
+            String pin1,
+            String pin2,
+            String pin3,
+            String pin4,
+            String pin5,
+            String pin6,
+            String pin7,
+            String pin8
+    ) {
+        Map<String, String> form = new LinkedHashMap<>();
+        form.put("lgd_code", villageLgdCode);
+        form.put("pin", pin);
+        form.put("pin1", emptyToBlank(pin1));
+        form.put("pin2", emptyToBlank(pin2));
+        form.put("pin3", emptyToBlank(pin3));
+        form.put("pin4", emptyToBlank(pin4));
+        form.put("pin5", emptyToBlank(pin5));
+        form.put("pin6", emptyToBlank(pin6));
+        form.put("pin7", emptyToBlank(pin7));
+        form.put("pin8", emptyToBlank(pin8));
+        return form;
+    }
+
+    private static String emptyToBlank(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static boolean isUpstreamHttpNotFound(JsonNode upstream) {
+        return upstream != null && upstream.isObject()
+                && upstream.has("httpStatus")
+                && upstream.get("httpStatus").asInt() == 404;
     }
 
     // Urban (Property Card / ePCIS)
@@ -408,6 +609,36 @@ public class LandRecordsProxyController {
      * If upstream payload has a "data" field, return it directly.
      * Otherwise return the full payload (error/debug).
      */
+    /**
+     * Normalizes G2B GetLandDetailSurvyWise response to {@code Land_Detail} array when present.
+     */
+    private static ResponseEntity<?> unwrapG2bLandDetail(JsonNode upstream) {
+        int httpStatus = extractHttpStatus(upstream);
+        if (upstream != null && upstream.isObject()) {
+            JsonNode landDetail = upstream.get("Land_Detail");
+            if (landDetail != null && !landDetail.isNull()) {
+                if (landDetail.isArray() && landDetail.size() == 0 && upstream.has("message")) {
+                    String msg = upstream.get("message").asText("");
+                    if (msg.toLowerCase().contains("not found") || msg.toLowerCase().startsWith("error")) {
+                        return ResponseEntity.status(404).body(Map.of("error", msg.trim()));
+                    }
+                }
+                return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(landDetail);
+            }
+            JsonNode message = upstream.get("message");
+            if (message != null && message.isTextual()) {
+                String msg = message.asText().trim();
+                if (msg.toLowerCase().contains("not found") || msg.toLowerCase().startsWith("error")) {
+                    return ResponseEntity.status(404).body(Map.of("error", msg));
+                }
+            }
+            if (httpStatus >= 400) {
+                return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
+            }
+        }
+        return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
+    }
+
     private static ResponseEntity<?> unwrapData(JsonNode upstream) {
         int httpStatus = 200;
         if (upstream != null && upstream.isObject()) {
@@ -441,6 +672,131 @@ public class LandRecordsProxyController {
     }
 
     /**
+     * Uses upstream JSON {@code status} when it signals an error (400/500), even if HTTP was 200.
+     */
+    private static int extractEffectiveStatus(JsonNode upstream) {
+        if (upstream != null && upstream.isObject()) {
+            JsonNode status = upstream.get("status");
+            if (status != null && status.canConvertToInt()) {
+                int s = status.asInt();
+                if (s >= 400) {
+                    return s;
+                }
+            }
+        }
+        return extractHttpStatus(upstream);
+    }
+
+    /**
+     * Satbara PDF is consumed directly by UI (same pattern as Notice 9).
+     * Normalizes decrypted payload to {@code { url }} or {@code { type, mimeType, base64, dataUrl }}.
+     */
+    private static ResponseEntity<?> unwrapSatbaraPdf(JsonNode upstream) {
+        int httpStatus = extractHttpStatus(upstream);
+        int effectiveStatus = extractEffectiveStatus(upstream);
+        if (upstream != null && upstream.isObject()) {
+            if (effectiveStatus >= 400) {
+                JsonNode message = upstream.get("message");
+                if (message != null && message.isTextual()) {
+                    return ResponseEntity.status(HttpStatusCode.valueOf(effectiveStatus))
+                            .body(Map.of("error", message.asText().trim()));
+                }
+                return ResponseEntity.status(HttpStatusCode.valueOf(effectiveStatus)).body(upstream);
+            }
+            if (httpStatus >= 400) {
+                return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
+            }
+
+            JsonNode data = upstream.get("data");
+            JsonNode normalized = normalizeSatbaraPdfData(data);
+            if (normalized != null) {
+                return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(normalized);
+            }
+        }
+        return ResponseEntity.status(HttpStatusCode.valueOf(httpStatus)).body(upstream);
+    }
+
+    private static JsonNode normalizeSatbaraPdfData(JsonNode data) {
+        if (data == null || data.isNull()) {
+            return null;
+        }
+
+        if (data.isTextual()) {
+            String text = normalizeQuotedText(data.asText());
+            String sanitized = sanitizeBase64Payload(text);
+            if (looksLikeBase64Payload(sanitized)) {
+                ObjectNode out = JsonNodeFactory.instance.objectNode();
+                String mimeType = detectMimeTypeFromBase64(sanitized);
+                out.put("type", "base64-file");
+                out.put("mimeType", mimeType);
+                out.put("base64", sanitized);
+                if (mimeType.startsWith("image/") || "application/pdf".equals(mimeType)) {
+                    out.put("dataUrl", "data:" + mimeType + ";base64," + sanitized);
+                }
+                return out;
+            }
+            ObjectNode out = JsonNodeFactory.instance.objectNode();
+            out.put("url", text);
+            return out;
+        }
+
+        if (data.isObject()) {
+            JsonNode url = firstNonBlankText(
+                    data.get("url"),
+                    data.get("pdfUrl"),
+                    data.get("satbaraUrl"),
+                    data.get("satbara_pdf_url"),
+                    data.get("viewUrl"),
+                    data.get("link")
+            );
+            if (url != null) {
+                ObjectNode out = JsonNodeFactory.instance.objectNode();
+                out.put("url", url.asText());
+                return out;
+            }
+            JsonNode embedded = firstNonBlankText(
+                    data.get("base64"),
+                    data.get("pdf"),
+                    data.get("pdfBase64"),
+                    data.get("satbaraPdf"),
+                    data.get("satbara_pdf"),
+                    data.get("file"),
+                    data.get("data"),
+                    data.get("content")
+            );
+            if (embedded != null) {
+                return normalizeSatbaraPdfData(embedded);
+            }
+            return moveSearchFieldFirst(data);
+        }
+
+        if (data.isArray() && data.size() > 0) {
+            JsonNode first = data.get(0);
+            JsonNode normalizedFirst = normalizeSatbaraPdfData(first);
+            if (normalizedFirst != null) {
+                return normalizedFirst;
+            }
+        }
+
+        return data;
+    }
+
+    /** Strip whitespace and Mahabhumi line-break escapes so base64 decodes in browsers. */
+    private static String sanitizeBase64Payload(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim()
+                .replace("\\r\\n", "")
+                .replace("\\n", "")
+                .replace("\\r", "")
+                .replace("\r\n", "")
+                .replace("\n", "")
+                .replace("\r", "")
+                .replaceAll("\\s+", "");
+    }
+
+    /**
      * Notice 9 is consumed directly by UI and should come back in plain/decrypted form.
      * Normalizes multiple upstream shapes to { "url": "<value>" } when possible.
      */
@@ -470,14 +826,15 @@ public class LandRecordsProxyController {
         // Decrypted plain string URL/text.
         if (data.isTextual()) {
             String text = normalizeQuotedText(data.asText());
-            if (looksLikeBase64Payload(text)) {
+            String sanitized = sanitizeBase64Payload(text);
+            if (looksLikeBase64Payload(sanitized)) {
                 ObjectNode out = JsonNodeFactory.instance.objectNode();
-                String mimeType = detectMimeTypeFromBase64(text);
+                String mimeType = detectMimeTypeFromBase64(sanitized);
                 out.put("type", "base64-file");
                 out.put("mimeType", mimeType);
-                out.put("base64", text);
-                if (mimeType.startsWith("image/")) {
-                    out.put("dataUrl", "data:" + mimeType + ";base64," + text);
+                out.put("base64", sanitized);
+                if (mimeType.startsWith("image/") || "application/pdf".equals(mimeType)) {
+                    out.put("dataUrl", "data:" + mimeType + ";base64," + sanitized);
                 }
                 return out;
             }
@@ -517,14 +874,16 @@ public class LandRecordsProxyController {
 
     private static boolean looksLikeBase64Payload(String s) {
         if (s == null) return false;
-        String t = s.replaceAll("\\s+", "");
-        if (t.length() < 64 || (t.length() % 4 != 0)) return false;
+        String t = sanitizeBase64Payload(s);
+        if (t.length() < 64) return false;
+        if (t.startsWith("JVBERi0")) return true;
+        if (t.length() % 4 != 0) return false;
         return t.matches("^[A-Za-z0-9+/=]+$");
     }
 
     private static String detectMimeTypeFromBase64(String base64) {
         try {
-            byte[] bytes = Base64.getDecoder().decode(base64.replaceAll("\\s+", ""));
+            byte[] bytes = Base64.getDecoder().decode(sanitizeBase64Payload(base64));
             if (bytes.length >= 4) {
                 // JPEG FF D8 FF
                 if ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8 && (bytes[2] & 0xFF) == 0xFF) {
@@ -567,6 +926,44 @@ public class LandRecordsProxyController {
             }
         }
         return null;
+    }
+
+    @GetMapping("/rural/satbara-pdf-view-debug")
+    public ResponseEntity<?> ruralSatbaraPdfViewDebug(
+            @RequestParam("villageLgdCode") String villageLgdCode,
+            @RequestParam("pin") String pin,
+            @RequestParam(name = "pin1", required = false) String pin1,
+            @RequestParam(name = "pin2", required = false) String pin2,
+            @RequestParam(name = "pin3", required = false) String pin3,
+            @RequestParam(name = "pin4", required = false) String pin4,
+            @RequestParam(name = "pin5", required = false) String pin5,
+            @RequestParam(name = "pin6", required = false) String pin6,
+            @RequestParam(name = "pin7", required = false) String pin7,
+            @RequestParam(name = "pin8", required = false) String pin8
+    ) {
+        Map<String, String> form = satbaraPinForm(
+                villageLgdCode, pin, pin1, pin2, pin3, pin4, pin5, pin6, pin7, pin8
+        );
+        JsonNode rawRes = landRecordsClient.postFormRaw(satbaraPdfPath, form);
+        JsonNode decodedRes = landRecordsClient.postForm(satbaraPdfPath, form);
+
+        ObjectNode out = JsonNodeFactory.instance.objectNode();
+        out.set("rawUpstream", rawRes);
+        out.set("decodedUpstream", decodedRes);
+        out.put("upstreamPath", satbaraPdfPath);
+
+        JsonNode rawData = rawRes != null && rawRes.isObject() ? rawRes.get("data") : null;
+        if (rawData != null && rawData.isTextual()) {
+            out.set("decryptDebug", landRecordsClient.debugDecryptData(rawData.asText()));
+        }
+
+        JsonNode decodedData = decodedRes != null && decodedRes.isObject() ? decodedRes.get("data") : null;
+        JsonNode normalized = normalizeSatbaraPdfData(decodedData);
+        if (normalized != null) {
+            out.set("normalizedForUi", normalized);
+        }
+
+        return ResponseEntity.ok(out);
     }
 
     @GetMapping("/urban/notice-nine-view-debug")

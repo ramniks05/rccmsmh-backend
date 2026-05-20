@@ -15,6 +15,7 @@ public class OfficeResponse {
     private final Long locationId;
 
     private final String name;
+    private final String officeCode;
     private final String localName;
     private final String shortName;
     private final String shortNameLocal;
@@ -30,6 +31,7 @@ public class OfficeResponse {
             String level,
             Long locationId,
             String name,
+            String officeCode,
             String localName,
             String shortName,
             String shortNameLocal
@@ -44,6 +46,7 @@ public class OfficeResponse {
         this.level = level;
         this.locationId = locationId;
         this.name = name;
+        this.officeCode = officeCode;
         this.localName = localName;
         this.shortName = shortName;
         this.shortNameLocal = shortNameLocal;
@@ -87,6 +90,10 @@ public class OfficeResponse {
 
     public String getName() {
         return name;
+    }
+
+    public String getOfficeCode() {
+        return officeCode;
     }
 
     public String getLocalName() {

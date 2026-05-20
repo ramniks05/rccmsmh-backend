@@ -6,6 +6,14 @@ import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
 import com.maharashtra.rccms.model.PartyInPersonRegistration;
 import com.maharashtra.rccms.model.caseflow.CaseRegistry;
+import com.maharashtra.rccms.dto.caseflow.CaseHearingResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetHistoryResponse;
+import com.maharashtra.rccms.model.caseflow.CaseHearing;
+import com.maharashtra.rccms.model.caseflow.CaseJudgmentWorkflowStatus;
+import com.maharashtra.rccms.model.caseflow.CaseNotice;
+import com.maharashtra.rccms.model.caseflow.CaseNoticeStatus;
+import com.maharashtra.rccms.model.caseflow.CaseOrderSheetHistory;
 import com.maharashtra.rccms.model.filing.*;
 import com.maharashtra.rccms.model.master.*;
 import com.maharashtra.rccms.repository.*;
@@ -15,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.Principal;
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Persists the Category 1 objection filing aggregate ({@link FilingApplication}). Case registry / numbering belongs to officer acceptance flows.
@@ -42,6 +51,10 @@ public class FilingApplicationService {
     private final PartyInPersonRegistrationRepository partyInPersonRegistrationRepository;
     private final EmployeeRepository employeeRepository;
     private final EmployeePostingRepository employeePostingRepository;
+    private final CaseNoticeRepository caseNoticeRepository;
+    private final CaseHearingRepository caseHearingRepository;
+    private final CaseOrderSheetHistoryRepository caseOrderSheetHistoryRepository;
+    private final CaseJudgmentWorkflowRepository caseJudgmentWorkflowRepository;
 
     public FilingApplicationService(
             FilingApplicationRepository filingApplicationRepository,
@@ -57,7 +70,11 @@ public class FilingApplicationService {
             AdvocateRegistrationRepository advocateRegistrationRepository,
             PartyInPersonRegistrationRepository partyInPersonRegistrationRepository,
             EmployeeRepository employeeRepository,
-            EmployeePostingRepository employeePostingRepository
+            EmployeePostingRepository employeePostingRepository,
+            CaseNoticeRepository caseNoticeRepository,
+            CaseHearingRepository caseHearingRepository,
+            CaseOrderSheetHistoryRepository caseOrderSheetHistoryRepository,
+            CaseJudgmentWorkflowRepository caseJudgmentWorkflowRepository
     ) {
         this.filingApplicationRepository = filingApplicationRepository;
         this.caseRegistryRepository = caseRegistryRepository;
@@ -73,6 +90,10 @@ public class FilingApplicationService {
         this.partyInPersonRegistrationRepository = partyInPersonRegistrationRepository;
         this.employeeRepository = employeeRepository;
         this.employeePostingRepository = employeePostingRepository;
+        this.caseNoticeRepository = caseNoticeRepository;
+        this.caseHearingRepository = caseHearingRepository;
+        this.caseOrderSheetHistoryRepository = caseOrderSheetHistoryRepository;
+        this.caseJudgmentWorkflowRepository = caseJudgmentWorkflowRepository;
     }
 
     @Transactional
@@ -133,6 +154,7 @@ public class FilingApplicationService {
         applyDisputedOrder(entity, mergedDisputed);
 
         applyDisputedLands(entity, payload.getDisputedLands());
+        fillOfficeFromDisputedLandsIfMissing(entity);
         applyAttachments(entity, payload.getAttachments(), principal.getName());
 
         if (status == ApplicationStatus.SUBMITTED) {
@@ -301,6 +323,19 @@ public class FilingApplicationService {
                         ApplicationStatus.SUBMITTED
                 );
 
+        Map<Long, CaseRegistry> caseById = new HashMap<>();
+        Set<Long> registeredCaseIds = new HashSet<>();
+        for (FilingApplication app : applications) {
+            if (app.getRegisteredCaseId() != null) {
+                registeredCaseIds.add(app.getRegisteredCaseId());
+            }
+        }
+        if (!registeredCaseIds.isEmpty()) {
+            for (CaseRegistry c : caseRegistryRepository.findAllById(registeredCaseIds)) {
+                caseById.put(c.getId(), c);
+            }
+        }
+
         List<OfficerInboxItemResponse> out = new ArrayList<>();
         for (FilingApplication app : applications) {
             if (!isAssignedToCurrentOfficerRole(app, officerIsPo)) {
@@ -311,6 +346,9 @@ public class FilingApplicationService {
             row.setApplicationNo(app.getApplicationNo());
             row.setClientApplicationRef(app.getClientApplicationRef() != null ? app.getClientApplicationRef().toString() : null);
             row.setCaseId(app.getRegisteredCaseId());
+            CaseRegistry caseRow = app.getRegisteredCaseId() != null ? caseById.get(app.getRegisteredCaseId()) : null;
+            row.setCaseNo(caseRow != null ? caseRow.getCaseNo() : null);
+            row.setCaseStatus(caseRow != null ? caseRow.getStatus() : null);
             row.setCaseCategoryId(app.getCaseCategory() != null ? app.getCaseCategory().getId() : null);
             row.setCaseCategoryName(app.getCaseCategory() != null ? app.getCaseCategory().getName() : null);
             row.setSubjectId(app.getSubject() != null ? app.getSubject().getId() : null);
@@ -358,44 +396,216 @@ public class FilingApplicationService {
             throw new IllegalArgumentException("Application is not assigned to current officer role.");
         }
 
-        OfficerApplicationDetailResponse out = new OfficerApplicationDetailResponse();
-        out.setApplicationId(app.getId());
-        out.setApplicationNo(app.getApplicationNo());
-        out.setClientApplicationRef(app.getClientApplicationRef() != null ? app.getClientApplicationRef().toString() : null);
-        out.setCaseId(app.getRegisteredCaseId());
+        String caseNo = null;
         if (app.getRegisteredCaseId() != null) {
             CaseRegistry c = caseRegistryRepository.findById(app.getRegisteredCaseId()).orElse(null);
-            out.setCaseNo(c != null ? c.getCaseNo() : null);
+            caseNo = c != null ? c.getCaseNo() : null;
         }
-        out.setCaseCategoryId(app.getCaseCategory() != null ? app.getCaseCategory().getId() : null);
-        out.setCaseCategoryName(app.getCaseCategory() != null ? app.getCaseCategory().getName() : null);
-        out.setStatus(app.getStatus() != null ? app.getStatus().name() : null);
-        out.setProcessingStage(deriveProcessingStage(app));
-        out.setCurrentAssigneeRole(Boolean.TRUE.equals(app.getForwardedToPo()) ? "PRESIDING_OFFICER" : "CLERK");
-        out.setOfficeId(app.getOffice() != null ? app.getOffice().getId() : null);
-        out.setOfficeName(app.getOffice() != null ? app.getOffice().getName() : null);
-        out.setSubjectId(app.getSubject() != null ? app.getSubject().getId() : null);
-        out.setSubjectName(app.getSubject() != null ? app.getSubject().getSubjectName() : null);
-        out.setApplicationDescription(app.getApplicationDescription());
-        out.setCreatedAt(app.getCreatedAt());
-        out.setUpdatedAt(app.getUpdatedAt());
-        out.setSubmittedAt(app.getSubmittedAt());
+        OfficerApplicationDetailResponse out = toOfficerApplicationDetailResponse(
+                app,
+                app.getRegisteredCaseId(),
+                caseNo,
+                app.getStatus() != null ? app.getStatus().name() : null,
+                deriveProcessingStage(app),
+                Boolean.TRUE.equals(app.getForwardedToPo()) ? "PRESIDING_OFFICER" : "CLERK"
+        );
+        if (app.getRegisteredCaseId() != null) {
+            out.setNotices(caseNoticeRepository.findByCaseRegistryIdOrderByIdDesc(app.getRegisteredCaseId()).stream()
+                    .map(FilingApplicationService::toCaseNoticeResponse)
+                    .collect(Collectors.toList()));
+        } else {
+            out.setNotices(Collections.emptyList());
+        }
+        return out;
+    }
 
-        if (app.getFiledByAdvocate() != null) {
-            out.setFiledByName(app.getFiledByAdvocate().getFullName());
-            out.setFiledByRole("ADVOCATE");
-        } else if (app.getFiledByParty() != null) {
-            out.setFiledByName(app.getFiledByParty().getFullName());
-            out.setFiledByRole(app.getFiledByParty().getRole() != null ? app.getFiledByParty().getRole().name() : "PARTY_IN_PERSON");
+    @Transactional(readOnly = true)
+    public OfficerApplicationDetailResponse getOfficerCaseDetail(Long caseId, Principal principal) {
+        if (caseId == null) {
+            throw new IllegalArgumentException("caseId is required.");
+        }
+        Objects.requireNonNull(principal);
+        String login = normalizeLogin(principal.getName());
+        Long officeId = resolveOfficerCurrentOfficeId(login);
+
+        CaseRegistry caseRow = caseRegistryRepository.findByIdAndOfficeId(caseId, officeId)
+                .orElseThrow(() -> new IllegalArgumentException("Case not found for officer office."));
+
+        FilingApplication app = filingApplicationRepository.findById(caseRow.getFilingApplicationId())
+                .orElseThrow(() -> new IllegalArgumentException("Filing application not found for case."));
+
+        OfficerApplicationDetailResponse out = toOfficerApplicationDetailResponse(
+                app,
+                caseRow.getId(),
+                caseRow.getCaseNo(),
+                caseRow.getStatus(),
+                "CASE_PROCEEDINGS",
+                "PRESIDING_OFFICER"
+        );
+        out.setNotices(caseNoticeRepository.findByCaseRegistryIdOrderByIdDesc(caseRow.getId()).stream()
+                .map(FilingApplicationService::toCaseNoticeResponse)
+                .collect(Collectors.toList()));
+        return out;
+    }
+
+    @Transactional(readOnly = true)
+    public List<FilerApplicationListItemResponse> listMyApplications(Principal principal) {
+        Objects.requireNonNull(principal);
+        String login = normalizeLogin(principal.getName());
+
+        Optional<AdvocateRegistration> advocate = advocateRegistrationRepository.findByEmail(login);
+        if (advocate.isPresent()) {
+            return advocate.get().getId() == null
+                    ? Collections.emptyList()
+                    : filingApplicationRepository.findByFiledByAdvocate_IdOrderByUpdatedAtDescIdDesc(advocate.get().getId())
+                            .stream()
+                            .map(this::toFilerApplicationListItem)
+                            .collect(Collectors.toList());
         }
 
-        if (app.getDisputedOrder() != null) {
-            out.setDisputedOrder(toDisputedOrderPayload(app.getDisputedOrder()));
+        Optional<PartyInPersonRegistration> party = partyInPersonRegistrationRepository.findByEmail(login);
+        if (party.isPresent()) {
+            return party.get().getId() == null
+                    ? Collections.emptyList()
+                    : filingApplicationRepository.findByFiledByParty_IdOrderByUpdatedAtDescIdDesc(party.get().getId())
+                            .stream()
+                            .map(this::toFilerApplicationListItem)
+                            .collect(Collectors.toList());
         }
-        out.setApplicants(toApplicantPayloads(app.getApplicants()));
-        out.setRespondents(toRespondentPayloads(app.getRespondents()));
-        out.setDisputedLands(toDisputedLandPayloads(app.getDisputedLands()));
-        out.setAttachments(toAttachmentPayloads(app.getAttachments()));
+
+        throw new IllegalArgumentException("Filer profile not found for current login.");
+    }
+
+    @Transactional(readOnly = true)
+    public List<CaseNoticeResponse> listServedNoticesForApplication(Long applicationId, Principal principal) {
+        return listPartyVisibleNoticesForApplication(applicationId, principal);
+    }
+
+    @Transactional(readOnly = true)
+    public PartyApplicationPreviewResponse getPartyApplicationPreview(Long applicationId, Principal principal) {
+        if (applicationId == null) {
+            throw new IllegalArgumentException("applicationId is required.");
+        }
+        Objects.requireNonNull(principal);
+        String login = normalizeLogin(principal.getName());
+
+        FilingApplication app = filingApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new IllegalArgumentException("Application not found."));
+        assertPartyOwnership(app, login);
+
+        Long caseId = app.getRegisteredCaseId();
+        String caseNo = null;
+        String caseStatus = null;
+        if (caseId != null) {
+            CaseRegistry caseRow = caseRegistryRepository.findById(caseId).orElse(null);
+            if (caseRow != null) {
+                caseNo = caseRow.getCaseNo();
+                caseStatus = caseRow.getStatus();
+            }
+        }
+
+        OfficerApplicationDetailResponse application = toOfficerApplicationDetailResponse(
+                app,
+                caseId,
+                caseNo,
+                caseStatus != null ? caseStatus : (app.getStatus() != null ? app.getStatus().name() : null),
+                caseId != null ? "CASE_PROCEEDINGS" : null,
+                null
+        );
+        application.setNotices(Collections.emptyList());
+
+        PartyApplicationPreviewResponse out = new PartyApplicationPreviewResponse();
+        out.setApplication(application);
+
+        if (caseId != null) {
+            out.setNotices(loadPartyVisibleNotices(caseId));
+            out.setHearings(loadCaseHearingsForParty(caseId, caseNo));
+            out.setOrderSheetHistory(loadOrderSheetHistoryForParty(caseId));
+            caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).ifPresent(judgment -> {
+                if (judgment.getStatus() == CaseJudgmentWorkflowStatus.PUBLISHED) {
+                    out.setJudgmentWorkflowStatus(judgment.getStatus().name());
+                    out.setJudgmentSummary(trimToNull(judgment.getPublishedSummary()));
+                }
+            });
+        } else {
+            out.setNotices(Collections.emptyList());
+            out.setHearings(Collections.emptyList());
+            out.setOrderSheetHistory(Collections.emptyList());
+        }
+
+        return out;
+    }
+
+    @Transactional(readOnly = true)
+    public List<CaseNoticeResponse> listPartyVisibleNoticesForApplication(Long applicationId, Principal principal) {
+        if (applicationId == null) {
+            throw new IllegalArgumentException("applicationId is required.");
+        }
+        Objects.requireNonNull(principal);
+        String login = normalizeLogin(principal.getName());
+
+        FilingApplication app = filingApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new IllegalArgumentException("Application not found."));
+        assertPartyOwnership(app, login);
+
+        if (app.getRegisteredCaseId() == null) {
+            return Collections.emptyList();
+        }
+        return loadPartyVisibleNotices(app.getRegisteredCaseId());
+    }
+
+    private List<CaseNoticeResponse> loadPartyVisibleNotices(Long caseId) {
+        List<CaseNoticeResponse> out = new ArrayList<>();
+        for (CaseNotice row : caseNoticeRepository.findByCaseRegistryIdOrderByIdDesc(caseId)) {
+            if (!isPartyVisibleNoticeStatus(row.getStatus())) {
+                continue;
+            }
+            out.add(toPartyCaseNoticeResponse(row));
+        }
+        return out;
+    }
+
+    private static boolean isPartyVisibleNoticeStatus(CaseNoticeStatus status) {
+        return status == CaseNoticeStatus.PO_FINALIZED
+                || status == CaseNoticeStatus.PO_SIGNED
+                || status == CaseNoticeStatus.SERVED;
+    }
+
+    private List<CaseHearingResponse> loadCaseHearingsForParty(Long caseId, String caseNo) {
+        List<CaseHearingResponse> out = new ArrayList<>();
+        for (CaseHearing row : caseHearingRepository.findByCaseRegistryIdOrderByHearingNoAsc(caseId)) {
+            CaseHearingResponse dto = new CaseHearingResponse();
+            dto.setHearingId(row.getId());
+            dto.setCaseId(caseId);
+            dto.setCaseNo(caseNo);
+            dto.setHearingNo(row.getHearingNo());
+            dto.setHearingDate(row.getHearingDate());
+            dto.setStatus(row.getStatus());
+            dto.setNoticeGenerated(row.getNoticeGenerated());
+            dto.setRemarks(row.getRemarks());
+            dto.setCreatedAt(row.getCreatedAt());
+            dto.setUpdatedAt(row.getUpdatedAt());
+            out.add(dto);
+        }
+        return out;
+    }
+
+    private List<CaseOrderSheetHistoryResponse> loadOrderSheetHistoryForParty(Long caseId) {
+        List<CaseOrderSheetHistoryResponse> out = new ArrayList<>();
+        for (CaseOrderSheetHistory row : caseOrderSheetHistoryRepository.findByCaseRegistryIdOrderByCreatedAtDesc(caseId)) {
+            CaseOrderSheetHistoryResponse dto = new CaseOrderSheetHistoryResponse();
+            dto.setHistoryId(row.getId());
+            if (row.getCaseHearing() != null) {
+                dto.setHearingId(row.getCaseHearing().getId());
+                dto.setHearingNo(row.getCaseHearing().getHearingNo());
+                dto.setHearingDate(row.getCaseHearing().getHearingDate());
+            }
+            dto.setContent(row.getContent());
+            dto.setRemarks(row.getRemarks());
+            dto.setCreatedAt(row.getCreatedAt());
+            dto.setCreatedByLoginId(row.getCreatedByLoginId());
+            out.add(dto);
+        }
         return out;
     }
 
@@ -490,6 +700,51 @@ public class FilingApplicationService {
         throw new IllegalArgumentException("Not allowed to modify this application.");
     }
 
+    private FilerApplicationListItemResponse toFilerApplicationListItem(FilingApplication app) {
+        FilerApplicationListItemResponse row = new FilerApplicationListItemResponse();
+        row.setApplicationId(app.getId());
+        row.setApplicationNo(app.getApplicationNo());
+        row.setCaseId(app.getRegisteredCaseId());
+        if (app.getRegisteredCaseId() != null) {
+            CaseRegistry caseRow = caseRegistryRepository.findById(app.getRegisteredCaseId()).orElse(null);
+            if (caseRow != null) {
+                row.setCaseNo(caseRow.getCaseNo());
+                row.setCaseStatus(caseRow.getStatus());
+            }
+        }
+        row.setCaseCategoryId(app.getCaseCategory() != null ? app.getCaseCategory().getId() : null);
+        row.setCaseCategoryName(app.getCaseCategory() != null ? app.getCaseCategory().getName() : null);
+        row.setSubjectId(app.getSubject() != null ? app.getSubject().getId() : null);
+        row.setSubjectName(app.getSubject() != null ? app.getSubject().getSubjectName() : null);
+        row.setOfficeId(app.getOffice() != null ? app.getOffice().getId() : null);
+        row.setOfficeName(app.getOffice() != null ? app.getOffice().getName() : null);
+        row.setStatus(app.getStatus() != null ? app.getStatus().name() : null);
+        row.setApplicationDescription(app.getApplicationDescription());
+        row.setSubmittedAt(app.getSubmittedAt());
+        row.setCreatedAt(app.getCreatedAt());
+        row.setUpdatedAt(app.getUpdatedAt());
+        if (app.getFiledByAdvocate() != null) {
+            row.setFiledByRole("ADVOCATE");
+        } else if (app.getFiledByParty() != null) {
+            row.setFiledByRole(app.getFiledByParty().getRole() != null ? app.getFiledByParty().getRole().name() : "PARTY_IN_PERSON");
+        }
+        return row;
+    }
+
+    private void assertPartyOwnership(FilingApplication entity, String login) {
+        if (entity.getFiledByAdvocate() != null && hasText(entity.getFiledByAdvocate().getEmail())) {
+            if (normalizeLogin(entity.getFiledByAdvocate().getEmail()).equals(login)) {
+                return;
+            }
+        }
+        if (entity.getFiledByParty() != null && hasText(entity.getFiledByParty().getEmail())) {
+            if (normalizeLogin(entity.getFiledByParty().getEmail()).equals(login)) {
+                return;
+            }
+        }
+        throw new IllegalArgumentException("Not allowed to view this application.");
+    }
+
     private void applyFormHeader(FilingApplication entity, ApplicationFormNestedPayload form) {
         Subject subject = resolveSubject(form.getSubjectId());
         entity.setSubject(subject);
@@ -498,10 +753,12 @@ public class FilingApplicationService {
         entity.setDistrict(resolveDistrict(form.getDistrictId()));
         entity.setSubdistrict(resolveSubdistrict(form.getSubdistrictId()));
         entity.setTaluka(resolveTaluka(form.getTalukaId()));
-        entity.setOffice(resolveOffice(form.getOfficeId()));
-        entity.setAct(resolveAct(form.getActId()));
+        Office office = resolveOffice(form.getOfficeId(), form.getOfficeCode());
+        entity.setOffice(office);
+        Act act = resolveAct(form.getActId(), form.getActCode());
+        entity.setAct(act);
 
-        normalizeSection(form, entity);
+        normalizeSection(form, entity, act);
 
         entity.setMutationYear(form.getMutationYear());
         entity.setMutationTypeFilter(trimToNull(form.getMutationTypeFilter()));
@@ -535,21 +792,33 @@ public class FilingApplicationService {
         return talukaRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Invalid talukaId."));
     }
 
-    private Office resolveOffice(Long id) {
-        if (id == null || zeroToNull(id) == null) {
-            return null;
+    private Office resolveOffice(Long id, String officeCode) {
+        Long officeId = zeroToNull(id);
+        if (officeId != null) {
+            return officeRepository.findById(officeId).orElseThrow(() -> new IllegalArgumentException("Invalid officeId."));
         }
-        return officeRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Invalid officeId."));
+        String code = trimToNull(officeCode);
+        if (code != null) {
+            return officeRepository.findFirstByOfficeCodeIgnoreCase(code)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid officeCode."));
+        }
+        return null;
     }
 
-    private Act resolveAct(Long id) {
-        if (id == null || zeroToNull(id) == null) {
-            return null;
+    private Act resolveAct(Long id, String actCode) {
+        Long actId = zeroToNull(id);
+        if (actId != null) {
+            return actRepository.findById(actId).orElseThrow(() -> new IllegalArgumentException("Invalid actId."));
         }
-        return actRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Invalid actId."));
+        String code = trimToNull(actCode);
+        if (code != null) {
+            return actRepository.findFirstByActCodeIgnoreCase(code)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid actCode."));
+        }
+        return null;
     }
 
-    private void normalizeSection(ApplicationFormNestedPayload form, FilingApplication entity) {
+    private void normalizeSection(ApplicationFormNestedPayload form, FilingApplication entity, Act resolvedAct) {
         String sectionCustomText = trimToNull(form.getSectionCustomText());
         if (hasText(sectionCustomText)) {
             entity.setSection(null);
@@ -562,27 +831,32 @@ public class FilingApplicationService {
                     .orElseThrow(() -> new IllegalArgumentException("Invalid sectionId."));
             entity.setSection(section);
             entity.setSectionCustomText(null);
-        } else {
-            entity.setSection(null);
-            entity.setSectionCustomText(null);
+            return;
         }
+        String sectionCode = trimToNull(form.getSectionCode());
+        if (sectionCode != null) {
+            Section section = (resolvedAct != null && resolvedAct.getId() != null)
+                    ? sectionRepository.findFirstByActIdAndSectionCodeIgnoreCase(resolvedAct.getId(), sectionCode)
+                        .orElseThrow(() -> new IllegalArgumentException("Invalid sectionCode for selected act."))
+                    : sectionRepository.findFirstBySectionCodeIgnoreCase(sectionCode)
+                        .orElseThrow(() -> new IllegalArgumentException("Invalid sectionCode."));
+            entity.setSection(section);
+            entity.setSectionCustomText(null);
+            return;
+        }
+        entity.setSection(null);
+        entity.setSectionCustomText(null);
     }
 
     private static void validateSubmission(FilingApplication entity) {
         if (entity.getSubject() == null) {
             throw new IllegalArgumentException("subjectId is required for submission.");
         }
-        if (entity.getDistrict() == null) {
-            throw new IllegalArgumentException("districtId is required for submission.");
-        }
-        if (entity.getTaluka() == null) {
-            throw new IllegalArgumentException("talukaId is required for submission.");
-        }
         if (entity.getOffice() == null) {
-            throw new IllegalArgumentException("officeId is required for submission.");
+            throw new IllegalArgumentException("officeId or officeCode is required for submission.");
         }
         if (entity.getAct() == null) {
-            throw new IllegalArgumentException("actId is required for submission.");
+            throw new IllegalArgumentException("actId or actCode is required for submission.");
         }
         boolean hasMasterSection = entity.getSection() != null;
         boolean hasCustomSection = hasText(trimToNull(entity.getSectionCustomText()));
@@ -598,13 +872,12 @@ public class FilingApplicationService {
             throw new IllegalArgumentException("Disputed mutation / order block is required for submission.");
         }
         boolean hasManual = hasText(trimToNull(disputed.getManualInwardNumber()));
+        boolean hasInward = hasText(trimToNull(disputed.getInwardNumber()))
+                || ((disputed.getSearchMode() != null && disputed.getSearchMode().name().equalsIgnoreCase("INWARD_NUMBER"))
+                    && hasText(trimToNull(disputed.getSearchValue())));
         boolean hasSearchSignal = disputed.getMutationSearched() != null || disputed.getMutationFound() != null
                 || disputed.getSearchMode() != null || hasText(trimToNull(disputed.getSearchValue()));
-        boolean hasApiFields = Boolean.TRUE.equals(disputed.getMutationFound())
-                && (hasText(trimToNull(disputed.getInwardNumber()))
-                || hasText(trimToNull(disputed.getApplicantName()))
-                || hasText(trimToNull(disputed.getMutationType())));
-        if (!(hasManual || hasApiFields || hasSearchSignal)) {
+        if (!(hasManual || hasInward || hasSearchSignal)) {
             throw new IllegalArgumentException("Disputed mutation / order details incomplete for submission.");
         }
         if (!hasText(trimToNull(entity.getApplicationDescription()))) {
@@ -932,7 +1205,8 @@ public class FilingApplicationService {
         for (DisputedLandPayload lp : lands) {
             ApplicationDisputedLand row = new ApplicationDisputedLand();
             row.setApplication(app);
-            row.setLandType(requiredEnum(DisputedLandType.class, lp.getLandType(), "land type"));
+            String landTypeRaw = normalizeLandType(lp.getLandType());
+            row.setLandType(requiredEnum(DisputedLandType.class, landTypeRaw, "land type"));
             row.setExternalSource(parseEnumQuiet(LandRecordsExternalSource.class, lp.getExternalSource()));
             row.setLineNo(lp.getLineNo() != null ? lp.getLineNo() : line++);
 
@@ -959,6 +1233,35 @@ public class FilingApplicationService {
 
             app.getDisputedLands().add(row);
         }
+    }
+
+    private void fillOfficeFromDisputedLandsIfMissing(FilingApplication app) {
+        if (app.getOffice() != null) {
+            return;
+        }
+        for (ApplicationDisputedLand land : app.getDisputedLands()) {
+            String officeCode = trimToNull(land.getOfficeCode());
+            if (officeCode == null) {
+                continue;
+            }
+            Office office = officeRepository.findFirstByOfficeCodeIgnoreCase(officeCode)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Invalid disputedLands officeCode: " + officeCode));
+            app.setOffice(office);
+            return;
+        }
+    }
+
+    private static String normalizeLandType(String raw) {
+        if (!hasText(raw)) {
+            return raw;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        // Frontend legacy alias
+        if ("URBAN_CTS".equals(normalized)) {
+            return "URBAN_PROPERTY_CARD";
+        }
+        return normalized;
     }
 
     private void applyAttachments(
@@ -1049,7 +1352,8 @@ public class FilingApplicationService {
             }
             return u;
         } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("Invalid clientApplicationRef (UUID expected).");
+            // Allow custom client reference formats by converting to deterministic UUID.
+            return UUID.nameUUIDFromBytes(t.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
     }
 
@@ -1113,8 +1417,9 @@ public class FilingApplicationService {
         if (Boolean.TRUE.equals(app.getPoApproved()) || Boolean.TRUE.equals(app.getPoRejected())) {
             return false;
         }
-        return officerIsPo ? Boolean.TRUE.equals(app.getForwardedToPo())
-                : !Boolean.TRUE.equals(app.getForwardedToPo());
+        // Simplified office-level visibility: all pending submitted applications
+        // for the officer's office should be visible, regardless of current stage.
+        return true;
     }
 
     private FilingApplication resolveOfficerScopedApplication(Long applicationId, Long officeId) {
@@ -1194,6 +1499,74 @@ public class FilingApplicationService {
             }
         }
         return null;
+    }
+
+    private static OfficerApplicationDetailResponse toOfficerApplicationDetailResponse(
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            String status,
+            String processingStage,
+            String currentAssigneeRole
+    ) {
+        OfficerApplicationDetailResponse out = new OfficerApplicationDetailResponse();
+        out.setApplicationId(app.getId());
+        out.setApplicationNo(app.getApplicationNo());
+        out.setClientApplicationRef(app.getClientApplicationRef() != null ? app.getClientApplicationRef().toString() : null);
+        out.setCaseId(caseId);
+        out.setCaseNo(caseNo);
+        out.setCaseCategoryId(app.getCaseCategory() != null ? app.getCaseCategory().getId() : null);
+        out.setCaseCategoryName(app.getCaseCategory() != null ? app.getCaseCategory().getName() : null);
+        out.setStatus(status);
+        out.setProcessingStage(processingStage);
+        out.setCurrentAssigneeRole(currentAssigneeRole);
+        out.setOfficeId(app.getOffice() != null ? app.getOffice().getId() : null);
+        out.setOfficeName(app.getOffice() != null ? app.getOffice().getName() : null);
+        out.setSubjectId(app.getSubject() != null ? app.getSubject().getId() : null);
+        out.setSubjectName(app.getSubject() != null ? app.getSubject().getSubjectName() : null);
+        out.setApplicationDescription(app.getApplicationDescription());
+        out.setCreatedAt(app.getCreatedAt());
+        out.setUpdatedAt(app.getUpdatedAt());
+        out.setSubmittedAt(app.getSubmittedAt());
+        out.setForm(toApplicationFormPayload(app));
+
+        if (app.getFiledByAdvocate() != null) {
+            out.setFiledByName(app.getFiledByAdvocate().getFullName());
+            out.setFiledByRole("ADVOCATE");
+        } else if (app.getFiledByParty() != null) {
+            out.setFiledByName(app.getFiledByParty().getFullName());
+            out.setFiledByRole(app.getFiledByParty().getRole() != null ? app.getFiledByParty().getRole().name() : "PARTY_IN_PERSON");
+        }
+
+        if (app.getDisputedOrder() != null) {
+            out.setDisputedOrder(toDisputedOrderPayload(app.getDisputedOrder()));
+        }
+        out.setApplicants(toApplicantPayloads(app.getApplicants()));
+        out.setRespondents(toRespondentPayloads(app.getRespondents()));
+        out.setDisputedLands(toDisputedLandPayloads(app.getDisputedLands()));
+        out.setAttachments(toAttachmentPayloads(app.getAttachments()));
+        return out;
+    }
+
+    private static ApplicationFormNestedPayload toApplicationFormPayload(FilingApplication app) {
+        ApplicationFormNestedPayload form = new ApplicationFormNestedPayload();
+        form.setSubjectId(app.getSubject() != null ? app.getSubject().getId() : null);
+        form.setApplicationDescription(app.getApplicationDescription());
+        form.setDistrictId(app.getDistrict() != null ? app.getDistrict().getId() : null);
+        form.setSubdistrictId(app.getSubdistrict() != null ? app.getSubdistrict().getId() : null);
+        form.setTalukaId(app.getTaluka() != null ? app.getTaluka().getId() : null);
+        form.setOfficeId(app.getOffice() != null ? app.getOffice().getId() : null);
+        form.setOfficeCode(app.getOffice() != null ? trimToNull(app.getOffice().getOfficeCode()) : null);
+        form.setActId(app.getAct() != null ? app.getAct().getId() : null);
+        form.setActCode(app.getAct() != null ? trimToNull(app.getAct().getActCode()) : null);
+        form.setSectionId(app.getSection() != null ? app.getSection().getId() : null);
+        form.setSectionCode(app.getSection() != null ? trimToNull(app.getSection().getSectionCode()) : null);
+        form.setSectionCustomText(app.getSectionCustomText());
+        form.setMutationYear(app.getMutationYear());
+        form.setMutationTypeFilter(app.getMutationTypeFilter());
+        form.setApplicants(toApplicantPayloads(app.getApplicants()));
+        form.setRespondents(toRespondentPayloads(app.getRespondents()));
+        return form;
     }
 
     private static ApplicationDisputedOrderPayload toDisputedOrderPayload(ApplicationDisputedOrder ord) {
@@ -1393,6 +1766,54 @@ public class FilingApplicationService {
             out.add(dto);
         }
         return out;
+    }
+
+    private static CaseNoticeResponse toCaseNoticeResponse(CaseNotice row) {
+        CaseNoticeResponse out = new CaseNoticeResponse();
+        out.setNoticeId(row.getId());
+        out.setCaseId(row.getCaseRegistry() != null ? row.getCaseRegistry().getId() : null);
+        out.setHearingId(row.getHearing() != null ? row.getHearing().getId() : null);
+        out.setNoticeType(row.getNoticeType());
+        out.setStatus(row.getStatus() != null ? row.getStatus().name() : null);
+        out.setDraftContent(row.getDraftContent());
+        out.setFinalContent(row.getFinalContent());
+        out.setDigitalSignatureRef(row.getDigitalSignatureRef());
+        out.setSelectedParties(parseJsonArray(row.getSelectedPartiesJson()));
+        out.setServedAt(row.getServedAt());
+        out.setCreatedAt(row.getCreatedAt());
+        out.setUpdatedAt(row.getUpdatedAt());
+        return out;
+    }
+
+    private static CaseNoticeResponse toPartyCaseNoticeResponse(CaseNotice row) {
+        CaseNoticeResponse out = toCaseNoticeResponse(row);
+        out.setDraftContent(null);
+        out.setDigitalSignatureRef(null);
+        String preview = trimToNull(row.getFinalContent());
+        if (preview == null) {
+            preview = trimToNull(row.getDraftContent());
+        }
+        out.setPreviewContent(preview);
+        out.setFinalContent(preview);
+        return out;
+    }
+
+    private static List<String> parseJsonArray(String raw) {
+        if (trimToNull(raw) == null) {
+            return Collections.emptyList();
+        }
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(raw, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
+                    })
+                    .stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(v -> !v.isEmpty())
+                    .collect(Collectors.toList());
+        } catch (Exception ex) {
+            return Collections.emptyList();
+        }
     }
 
     private FilingApplication ensureApplicationNumber(FilingApplication app) {

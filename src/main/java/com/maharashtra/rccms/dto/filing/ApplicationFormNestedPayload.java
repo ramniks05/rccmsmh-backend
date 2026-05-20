@@ -2,6 +2,7 @@ package com.maharashtra.rccms.dto.filing;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonSetter;
 
 import java.util.List;
 
@@ -19,9 +20,13 @@ public class ApplicationFormNestedPayload {
     private Long subdistrictId;
     private Long talukaId;
     private Long officeId;
+    private String officeCode;
 
     private Long actId;
+    private String actCode;
     private Long sectionId;
+    private String sectionCode;
+    @JsonAlias({"customSectionName"})
     private String sectionCustomText;
 
     private Integer mutationYear;
@@ -81,6 +86,14 @@ public class ApplicationFormNestedPayload {
         this.officeId = officeId;
     }
 
+    public String getOfficeCode() {
+        return officeCode;
+    }
+
+    public void setOfficeCode(String officeCode) {
+        this.officeCode = officeCode;
+    }
+
     public Long getActId() {
         return actId;
     }
@@ -89,12 +102,28 @@ public class ApplicationFormNestedPayload {
         this.actId = actId;
     }
 
+    public String getActCode() {
+        return actCode;
+    }
+
+    public void setActCode(String actCode) {
+        this.actCode = actCode;
+    }
+
     public Long getSectionId() {
         return sectionId;
     }
 
     public void setSectionId(Long sectionId) {
         this.sectionId = sectionId;
+    }
+
+    public String getSectionCode() {
+        return sectionCode;
+    }
+
+    public void setSectionCode(String sectionCode) {
+        this.sectionCode = sectionCode;
     }
 
     public String getSectionCustomText() {
@@ -109,8 +138,22 @@ public class ApplicationFormNestedPayload {
         return mutationYear;
     }
 
-    public void setMutationYear(Integer mutationYear) {
-        this.mutationYear = mutationYear;
+    @JsonSetter("mutationYear")
+    public void setMutationYear(Object mutationYear) {
+        if (mutationYear == null) {
+            this.mutationYear = null;
+            return;
+        }
+        if (mutationYear instanceof Number n) {
+            this.mutationYear = n.intValue();
+            return;
+        }
+        String text = mutationYear.toString().trim();
+        if (text.isEmpty()) {
+            this.mutationYear = null;
+            return;
+        }
+        this.mutationYear = Integer.parseInt(text);
     }
 
     public String getMutationTypeFilter() {

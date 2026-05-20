@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CaseOrderSheetUpsertRequest {
     private Long hearingId;
+    private java.time.LocalDate hearingDate;
     private String content;
     private String remarks;
 
@@ -14,6 +15,14 @@ public class CaseOrderSheetUpsertRequest {
 
     public void setHearingId(Long hearingId) {
         this.hearingId = hearingId;
+    }
+
+    public java.time.LocalDate getHearingDate() {
+        return hearingDate;
+    }
+
+    public void setHearingDate(java.time.LocalDate hearingDate) {
+        this.hearingDate = hearingDate;
     }
 
     public String getContent() {

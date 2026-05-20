@@ -7,6 +7,9 @@ import com.maharashtra.rccms.dto.filing.ApplicationActionResponse;
 import com.maharashtra.rccms.dto.filing.OfficerApplicationDetailResponse;
 import com.maharashtra.rccms.dto.filing.OfficerCaseApprovalResponse;
 import com.maharashtra.rccms.dto.filing.OfficerInboxItemResponse;
+import com.maharashtra.rccms.dto.filing.PartyApplicationPreviewResponse;
+import com.maharashtra.rccms.dto.filing.FilerApplicationListItemResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
 import com.maharashtra.rccms.service.FilingApplicationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +31,16 @@ public class FilingApplicationController {
 
     public FilingApplicationController(FilingApplicationService filingApplicationService) {
         this.filingApplicationService = filingApplicationService;
+    }
+
+    @GetMapping("/mine")
+    public ResponseEntity<?> myApplications(Principal principal) {
+        try {
+            List<FilerApplicationListItemResponse> result = filingApplicationService.listMyApplications(principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
     }
 
     @PostMapping("/save")
@@ -54,6 +67,26 @@ public class FilingApplicationController {
     public ResponseEntity<?> officerApplicationDetail(@PathVariable("applicationId") Long applicationId, Principal principal) {
         try {
             OfficerApplicationDetailResponse result = filingApplicationService.getOfficerApplicationDetail(applicationId, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/{applicationId}/preview")
+    public ResponseEntity<?> partyApplicationPreview(@PathVariable("applicationId") Long applicationId, Principal principal) {
+        try {
+            PartyApplicationPreviewResponse result = filingApplicationService.getPartyApplicationPreview(applicationId, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/{applicationId}/notices")
+    public ResponseEntity<?> applicationNotices(@PathVariable("applicationId") Long applicationId, Principal principal) {
+        try {
+            List<CaseNoticeResponse> result = filingApplicationService.listServedNoticesForApplication(applicationId, principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));

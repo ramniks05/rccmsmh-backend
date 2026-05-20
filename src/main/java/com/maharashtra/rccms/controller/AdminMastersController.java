@@ -437,7 +437,7 @@ public class AdminMastersController {
             Office office = new Office();
             office.setDepartment(department);
             office.setOfficeType(officeType);
-            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getLocalName(),
+            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getOfficeCode(), request.getLocalName(),
                     request.getShortName(), request.getShortNameLocal());
             office = officeRepository.save(office);
             return ResponseEntity.status(HttpStatus.CREATED).body(toOfficeResponse(office));
@@ -475,7 +475,7 @@ public class AdminMastersController {
 
             office.setDepartment(department);
             office.setOfficeType(officeType);
-            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getLocalName(),
+            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getOfficeCode(), request.getLocalName(),
                     request.getShortName(), request.getShortNameLocal());
             office = officeRepository.save(office);
             return ResponseEntity.ok(toOfficeResponse(office));
@@ -1170,6 +1170,7 @@ public class AdminMastersController {
                                           String level,
                                           Long locationId,
                                           String name,
+                                          String officeCode,
                                           String localName,
                                           String shortName,
                                           String shortNameLocal) {
@@ -1179,6 +1180,7 @@ public class AdminMastersController {
         office.setLevel(level.trim().toUpperCase());
         office.setLocationId(locationId);
         office.setName(name.trim());
+        office.setOfficeCode(trimToNull(officeCode));
         office.setLocalName(localName);
         office.setShortName(shortName);
         office.setShortNameLocal(shortNameLocal);
@@ -1206,10 +1208,17 @@ public class AdminMastersController {
                 office.getLevel(),
                 office.getLocationId(),
                 office.getName(),
+                office.getOfficeCode(),
                 office.getLocalName(),
                 office.getShortName(),
                 office.getShortNameLocal()
         );
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private CaseCategory resolveOptionalNextCategory(Long categoryId, Long nextCaseCategoryId) {

@@ -22,4 +22,8 @@ public interface FilingApplicationRepository extends JpaRepository<FilingApplica
             Long officeId,
             ApplicationStatus status
     );
+
+    List<FilingApplication> findByFiledByAdvocate_IdOrderByUpdatedAtDescIdDesc(Long advocateId);
+
+    List<FilingApplication> findByFiledByParty_IdOrderByUpdatedAtDescIdDesc(Long partyId);
 }

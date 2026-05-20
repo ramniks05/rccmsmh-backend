@@ -1,8 +1,10 @@
 package com.maharashtra.rccms.dto.filing;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonSetter;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ApplicationDisputedOrderPayload {
@@ -49,8 +51,18 @@ public class ApplicationDisputedOrderPayload {
         return mutationSearched;
     }
 
-    public void setMutationSearched(Boolean mutationSearched) {
-        this.mutationSearched = mutationSearched;
+    @JsonSetter("mutationSearched")
+    public void setMutationSearched(Object mutationSearched) {
+        if (mutationSearched == null) {
+            this.mutationSearched = null;
+            return;
+        }
+        if (mutationSearched instanceof Boolean b) {
+            this.mutationSearched = b;
+            return;
+        }
+        // Some UIs send the searched mutation object itself.
+        this.mutationSearched = true;
     }
 
     public MutationDetailsPayload getMutationDetails() {
@@ -73,8 +85,9 @@ public class ApplicationDisputedOrderPayload {
         return manualInwardDate;
     }
 
-    public void setManualInwardDate(LocalDate manualInwardDate) {
-        this.manualInwardDate = manualInwardDate;
+    @JsonSetter("manualInwardDate")
+    public void setManualInwardDate(Object manualInwardDate) {
+        this.manualInwardDate = parseFlexibleDate(manualInwardDate);
     }
 
     public String getManualMutationType() {
@@ -115,5 +128,24 @@ public class ApplicationDisputedOrderPayload {
 
     public void setNotice9Resolved(Notice9ResolvedPayload notice9Resolved) {
         this.notice9Resolved = notice9Resolved;
+    }
+
+    private static LocalDate parseFlexibleDate(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDate d) return d;
+
+        String text = value.toString().trim();
+        if (text.isEmpty()) return null;
+
+        try {
+            return LocalDate.parse(text);
+        } catch (Exception ignore) {
+            // try dd/MM/yyyy
+        }
+        try {
+            return LocalDate.parse(text, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Invalid date format. Use yyyy-MM-dd or dd/MM/yyyy.");
+        }
     }
 }

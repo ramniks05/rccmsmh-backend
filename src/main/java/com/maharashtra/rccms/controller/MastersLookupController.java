@@ -128,6 +128,7 @@ public class MastersLookupController {
                 office.getLevel(),
                 office.getLocationId(),
                 office.getName(),
+                office.getOfficeCode(),
                 office.getLocalName(),
                 office.getShortName(),
                 office.getShortNameLocal()

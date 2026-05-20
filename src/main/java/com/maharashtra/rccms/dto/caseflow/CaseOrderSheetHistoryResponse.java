@@ -9,6 +9,7 @@ public class CaseOrderSheetHistoryResponse {
     private Integer hearingNo;
     private LocalDate hearingDate;
     private String content;
+    private String status;
     private String remarks;
     private Instant createdAt;
     private String createdByLoginId;
@@ -51,6 +52,14 @@ public class CaseOrderSheetHistoryResponse {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public String getRemarks() {

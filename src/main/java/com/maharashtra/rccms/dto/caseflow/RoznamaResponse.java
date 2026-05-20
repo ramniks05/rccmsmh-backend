@@ -2,15 +2,15 @@ package com.maharashtra.rccms.dto.caseflow;
 
 import java.time.Instant;
 
-public class CaseOrderSheetResponse {
+public class RoznamaResponse {
     private Long id;
     private Long caseId;
     private String caseNo;
+    private Long hearingId;
     private String content;
     private String draftContent;
     private String finalContent;
     private String status;
-    private Long currentHearingId;
     private String digitalSignatureRef;
     private Instant updatedAt;
     private String updatedByLoginId;
@@ -37,6 +37,14 @@ public class CaseOrderSheetResponse {
 
     public void setCaseNo(String caseNo) {
         this.caseNo = caseNo;
+    }
+
+    public Long getHearingId() {
+        return hearingId;
+    }
+
+    public void setHearingId(Long hearingId) {
+        this.hearingId = hearingId;
     }
 
     public String getContent() {
@@ -69,14 +77,6 @@ public class CaseOrderSheetResponse {
 
     public void setStatus(String status) {
         this.status = status;
-    }
-
-    public Long getCurrentHearingId() {
-        return currentHearingId;
-    }
-
-    public void setCurrentHearingId(Long currentHearingId) {
-        this.currentHearingId = currentHearingId;
     }
 
     public String getDigitalSignatureRef() {

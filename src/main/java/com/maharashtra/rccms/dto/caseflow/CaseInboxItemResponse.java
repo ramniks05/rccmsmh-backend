@@ -13,6 +13,8 @@ public class CaseInboxItemResponse {
     private String officeName;
     private Instant approvedAt;
     private Instant disposedAt;
+    private Long roznamaId;
+    private String proceedingStage;
 
     public Long getCaseId() {
         return caseId;
@@ -92,5 +94,21 @@ public class CaseInboxItemResponse {
 
     public void setDisposedAt(Instant disposedAt) {
         this.disposedAt = disposedAt;
+    }
+
+    public Long getRoznamaId() {
+        return roznamaId;
+    }
+
+    public void setRoznamaId(Long roznamaId) {
+        this.roznamaId = roznamaId;
+    }
+
+    public String getProceedingStage() {
+        return proceedingStage;
+    }
+
+    public void setProceedingStage(String proceedingStage) {
+        this.proceedingStage = proceedingStage;
     }
 }

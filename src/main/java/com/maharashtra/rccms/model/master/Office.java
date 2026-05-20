@@ -38,6 +38,9 @@ public class Office {
     @Column(nullable = false, length = 255)
     private String name;
 
+    @Column(name = "office_code", length = 64)
+    private String officeCode;
+
     @Column(name = "local_name", length = 512)
     private String localName;
 
@@ -101,6 +104,14 @@ public class Office {
 
     public void setLocalName(String localName) {
         this.localName = localName;
+    }
+
+    public String getOfficeCode() {
+        return officeCode;
+    }
+
+    public void setOfficeCode(String officeCode) {
+        this.officeCode = officeCode;
     }
 
     public String getShortName() {

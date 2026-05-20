@@ -1,5 +1,7 @@
 package com.maharashtra.rccms.dto.filing;
 
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,11 +29,13 @@ public class OfficerApplicationDetailResponse {
     private Instant updatedAt;
     private Instant submittedAt;
 
+    private ApplicationFormNestedPayload form;
     private ApplicationDisputedOrderPayload disputedOrder;
     private List<ApplicantRowPayload> applicants = new ArrayList<>();
     private List<RespondentRowPayload> respondents = new ArrayList<>();
     private List<DisputedLandPayload> disputedLands = new ArrayList<>();
     private List<ApplicationAttachmentPayload> attachments = new ArrayList<>();
+    private List<CaseNoticeResponse> notices = new ArrayList<>();
 
     public Long getApplicationId() {
         return applicationId;
@@ -193,6 +197,14 @@ public class OfficerApplicationDetailResponse {
         this.submittedAt = submittedAt;
     }
 
+    public ApplicationFormNestedPayload getForm() {
+        return form;
+    }
+
+    public void setForm(ApplicationFormNestedPayload form) {
+        this.form = form;
+    }
+
     public ApplicationDisputedOrderPayload getDisputedOrder() {
         return disputedOrder;
     }
@@ -231,5 +243,13 @@ public class OfficerApplicationDetailResponse {
 
     public void setAttachments(List<ApplicationAttachmentPayload> attachments) {
         this.attachments = attachments;
+    }
+
+    public List<CaseNoticeResponse> getNotices() {
+        return notices;
+    }
+
+    public void setNotices(List<CaseNoticeResponse> notices) {
+        this.notices = notices;
     }
 }

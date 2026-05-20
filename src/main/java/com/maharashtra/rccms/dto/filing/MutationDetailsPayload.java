@@ -1,8 +1,10 @@
 package com.maharashtra.rccms.dto.filing;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonSetter;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class MutationDetailsPayload {
@@ -28,8 +30,9 @@ public class MutationDetailsPayload {
         return inwardDate;
     }
 
-    public void setInwardDate(LocalDate inwardDate) {
-        this.inwardDate = inwardDate;
+    @JsonSetter("inwardDate")
+    public void setInwardDate(Object inwardDate) {
+        this.inwardDate = parseFlexibleDate(inwardDate);
     }
 
     public String getMutationType() {
@@ -78,5 +81,24 @@ public class MutationDetailsPayload {
 
     public void setNotice9Url(String notice9Url) {
         this.notice9Url = notice9Url;
+    }
+
+    private static LocalDate parseFlexibleDate(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDate d) return d;
+
+        String text = value.toString().trim();
+        if (text.isEmpty()) return null;
+
+        try {
+            return LocalDate.parse(text);
+        } catch (Exception ignore) {
+            // try dd/MM/yyyy
+        }
+        try {
+            return LocalDate.parse(text, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Invalid date format. Use yyyy-MM-dd or dd/MM/yyyy.");
+        }
     }
 }

@@ -11,4 +11,6 @@ public interface CaseHearingRepository extends JpaRepository<CaseHearing, Long> 
     List<CaseHearing> findByCaseRegistryIdOrderByHearingNoAsc(Long caseId);
     Optional<CaseHearing> findFirstByCaseRegistryIdOrderByHearingNoDesc(Long caseId);
     List<CaseHearing> findByCaseRegistryOfficeIdAndHearingDateOrderByCaseRegistryIdAscHearingNoAsc(Long officeId, LocalDate hearingDate);
+
+    List<CaseHearing> findByCaseRegistryIdAndHearingDateOrderByHearingNoAsc(Long caseRegistryId, LocalDate hearingDate);
 }

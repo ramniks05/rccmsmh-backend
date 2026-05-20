@@ -204,6 +204,7 @@ public class LocationLookupController {
                 o.getLevel(),
                 o.getLocationId(),
                 o.getName(),
+                o.getOfficeCode(),
                 o.getLocalName(),
                 o.getShortName(),
                 o.getShortNameLocal()

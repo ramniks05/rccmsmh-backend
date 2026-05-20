@@ -7,6 +7,7 @@ public class OfficeCreateRequest {
     private String level;
     private Long locationId;
     private String name;
+    private String officeCode;
     private String localName;
     private String shortName;
     private String shortNameLocal;
@@ -57,6 +58,14 @@ public class OfficeCreateRequest {
 
     public void setLocalName(String localName) {
         this.localName = localName;
+    }
+
+    public String getOfficeCode() {
+        return officeCode;
+    }
+
+    public void setOfficeCode(String officeCode) {
+        this.officeCode = officeCode;
     }
 
     public String getShortName() {

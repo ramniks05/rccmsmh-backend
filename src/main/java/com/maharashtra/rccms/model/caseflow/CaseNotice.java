@@ -10,33 +10,35 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 
 @Entity
-@Table(
-        name = "case_order_sheet",
-        uniqueConstraints = @UniqueConstraint(name = "uk_case_order_sheet_case_id", columnNames = "case_id")
-)
-public class CaseOrderSheet {
+@Table(name = "case_notice")
+public class CaseNotice {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "case_id", nullable = false)
     private CaseRegistry caseRegistry;
 
-    @Column(name = "content", nullable = false, columnDefinition = "TEXT")
-    private String content;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "hearing_id")
+    private CaseHearing hearing;
 
-    @Column(name = "draft_content", columnDefinition = "TEXT")
+    @Column(name = "notice_type", nullable = false, length = 64)
+    private String noticeType;
+
+    @Column(name = "selected_parties_json", columnDefinition = "TEXT")
+    private String selectedPartiesJson;
+
+    @Column(name = "draft_content", nullable = false, columnDefinition = "TEXT")
     private String draftContent;
 
     @Column(name = "final_content", columnDefinition = "TEXT")
@@ -44,14 +46,10 @@ public class CaseOrderSheet {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
-    private CaseOrderSheetStatus status = CaseOrderSheetStatus.CLERK_DRAFT;
+    private CaseNoticeStatus status = CaseNoticeStatus.CLERK_DRAFT;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "current_hearing_id")
-    private CaseHearing currentHearing;
-
-    @Column(name = "drafted_by_login_id", length = 150)
-    private String draftedByLoginId;
+    @Column(name = "clerk_drafted_by_login_id", nullable = false, length = 150)
+    private String clerkDraftedByLoginId;
 
     @Column(name = "po_finalized_by_login_id", length = 150)
     private String poFinalizedByLoginId;
@@ -62,8 +60,11 @@ public class CaseOrderSheet {
     @Column(name = "digital_signature_ref", length = 512)
     private String digitalSignatureRef;
 
-    @Column(name = "updated_by_login_id", nullable = false, length = 150)
-    private String updatedByLoginId;
+    @Column(name = "served_at")
+    private Instant servedAt;
+
+    @Column(name = "served_by_login_id", length = 150)
+    private String servedByLoginId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -95,12 +96,28 @@ public class CaseOrderSheet {
         this.caseRegistry = caseRegistry;
     }
 
-    public String getContent() {
-        return content;
+    public CaseHearing getHearing() {
+        return hearing;
     }
 
-    public void setContent(String content) {
-        this.content = content;
+    public void setHearing(CaseHearing hearing) {
+        this.hearing = hearing;
+    }
+
+    public String getNoticeType() {
+        return noticeType;
+    }
+
+    public void setNoticeType(String noticeType) {
+        this.noticeType = noticeType;
+    }
+
+    public String getSelectedPartiesJson() {
+        return selectedPartiesJson;
+    }
+
+    public void setSelectedPartiesJson(String selectedPartiesJson) {
+        this.selectedPartiesJson = selectedPartiesJson;
     }
 
     public String getDraftContent() {
@@ -119,28 +136,20 @@ public class CaseOrderSheet {
         this.finalContent = finalContent;
     }
 
-    public CaseOrderSheetStatus getStatus() {
+    public CaseNoticeStatus getStatus() {
         return status;
     }
 
-    public void setStatus(CaseOrderSheetStatus status) {
+    public void setStatus(CaseNoticeStatus status) {
         this.status = status;
     }
 
-    public CaseHearing getCurrentHearing() {
-        return currentHearing;
+    public String getClerkDraftedByLoginId() {
+        return clerkDraftedByLoginId;
     }
 
-    public void setCurrentHearing(CaseHearing currentHearing) {
-        this.currentHearing = currentHearing;
-    }
-
-    public String getDraftedByLoginId() {
-        return draftedByLoginId;
-    }
-
-    public void setDraftedByLoginId(String draftedByLoginId) {
-        this.draftedByLoginId = draftedByLoginId;
+    public void setClerkDraftedByLoginId(String clerkDraftedByLoginId) {
+        this.clerkDraftedByLoginId = clerkDraftedByLoginId;
     }
 
     public String getPoFinalizedByLoginId() {
@@ -167,12 +176,20 @@ public class CaseOrderSheet {
         this.digitalSignatureRef = digitalSignatureRef;
     }
 
-    public String getUpdatedByLoginId() {
-        return updatedByLoginId;
+    public Instant getServedAt() {
+        return servedAt;
     }
 
-    public void setUpdatedByLoginId(String updatedByLoginId) {
-        this.updatedByLoginId = updatedByLoginId;
+    public void setServedAt(Instant servedAt) {
+        this.servedAt = servedAt;
+    }
+
+    public String getServedByLoginId() {
+        return servedByLoginId;
+    }
+
+    public void setServedByLoginId(String servedByLoginId) {
+        this.servedByLoginId = servedByLoginId;
     }
 
     public Instant getCreatedAt() {

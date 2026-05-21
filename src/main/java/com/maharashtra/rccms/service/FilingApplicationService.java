@@ -10,9 +10,11 @@ import com.maharashtra.rccms.dto.caseflow.CaseHearingResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetHistoryResponse;
 import com.maharashtra.rccms.model.caseflow.CaseHearing;
+import com.maharashtra.rccms.model.caseflow.CaseJudgmentWorkflow;
 import com.maharashtra.rccms.model.caseflow.CaseJudgmentWorkflowStatus;
 import com.maharashtra.rccms.model.caseflow.CaseNotice;
 import com.maharashtra.rccms.model.caseflow.CaseNoticeStatus;
+import com.maharashtra.rccms.model.caseflow.CaseOrderSheet;
 import com.maharashtra.rccms.model.caseflow.CaseOrderSheetHistory;
 import com.maharashtra.rccms.model.filing.*;
 import com.maharashtra.rccms.model.master.*;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.Principal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -53,8 +56,10 @@ public class FilingApplicationService {
     private final EmployeePostingRepository employeePostingRepository;
     private final CaseNoticeRepository caseNoticeRepository;
     private final CaseHearingRepository caseHearingRepository;
+    private final CaseOrderSheetRepository caseOrderSheetRepository;
     private final CaseOrderSheetHistoryRepository caseOrderSheetHistoryRepository;
     private final CaseJudgmentWorkflowRepository caseJudgmentWorkflowRepository;
+    private final ApplicationHistoryRepository applicationHistoryRepository;
 
     public FilingApplicationService(
             FilingApplicationRepository filingApplicationRepository,
@@ -73,8 +78,10 @@ public class FilingApplicationService {
             EmployeePostingRepository employeePostingRepository,
             CaseNoticeRepository caseNoticeRepository,
             CaseHearingRepository caseHearingRepository,
+            CaseOrderSheetRepository caseOrderSheetRepository,
             CaseOrderSheetHistoryRepository caseOrderSheetHistoryRepository,
-            CaseJudgmentWorkflowRepository caseJudgmentWorkflowRepository
+            CaseJudgmentWorkflowRepository caseJudgmentWorkflowRepository,
+            ApplicationHistoryRepository applicationHistoryRepository
     ) {
         this.filingApplicationRepository = filingApplicationRepository;
         this.caseRegistryRepository = caseRegistryRepository;
@@ -92,8 +99,10 @@ public class FilingApplicationService {
         this.employeePostingRepository = employeePostingRepository;
         this.caseNoticeRepository = caseNoticeRepository;
         this.caseHearingRepository = caseHearingRepository;
+        this.caseOrderSheetRepository = caseOrderSheetRepository;
         this.caseOrderSheetHistoryRepository = caseOrderSheetHistoryRepository;
         this.caseJudgmentWorkflowRepository = caseJudgmentWorkflowRepository;
+        this.applicationHistoryRepository = applicationHistoryRepository;
     }
 
     @Transactional
@@ -116,6 +125,10 @@ public class FilingApplicationService {
         UUID clientRef = parseClientRef(payload.getClientApplicationRef());
 
         FilingApplication entity = locateOrCreate(payload.getApplicationId(), clientRef);
+        boolean isNewApplication = entity.getId() == null;
+        ApplicationStatus previousStatus = isNewApplication
+                ? null
+                : filingApplicationRepository.findById(entity.getId()).map(FilingApplication::getStatus).orElse(null);
 
         CaseCategory category = caseCategoryRepository.findById(requiredId(payload.getCaseCategoryId(), "caseCategoryId"))
                 .orElseThrow(() -> new IllegalArgumentException("Invalid caseCategoryId."));
@@ -165,6 +178,15 @@ public class FilingApplicationService {
         filingApplicationRepository.flush();
         entity = ensureApplicationNumber(entity);
         entity = ensureInitialClerkFlagsOnSubmit(entity, principal.getName());
+
+        String filerRole = advocateFiler != null ? "ADVOCATE" : (partyFiler != null && partyFiler.getRole() != null
+                ? partyFiler.getRole().name()
+                : "PARTY_IN_PERSON");
+        if (status == ApplicationStatus.SUBMITTED && previousStatus != ApplicationStatus.SUBMITTED) {
+            recordApplicationHistory(entity, ApplicationHistoryAction.SUBMITTED, null, filerRole, principal.getName());
+        } else if (isNewApplication && status == ApplicationStatus.DRAFT) {
+            recordApplicationHistory(entity, ApplicationHistoryAction.DRAFT_SAVED, null, filerRole, principal.getName());
+        }
 
         return buildResponse(entity);
     }
@@ -240,6 +262,16 @@ public class FilingApplicationService {
         app.setLastActionAt(Instant.now());
         filingApplicationRepository.save(app);
 
+        recordApplicationHistory(
+                app,
+                ApplicationHistoryAction.CASE_REGISTERED,
+                null,
+                "PRESIDING_OFFICER",
+                login,
+                row.getId(),
+                row.getCaseNo()
+        );
+
         return buildApprovalResponse(app, row, "Case generated successfully.");
     }
 
@@ -262,6 +294,7 @@ public class FilingApplicationService {
         app.setLastActionByRole("CLERK");
         app.setLastActionAt(Instant.now());
         filingApplicationRepository.save(app);
+        recordApplicationHistory(app, ApplicationHistoryAction.FORWARDED_TO_PO, remarks, "CLERK", login);
         return buildActionResponse(app, "Application forwarded to PO.");
     }
 
@@ -283,6 +316,7 @@ public class FilingApplicationService {
         app.setLastActionByRole("PRESIDING_OFFICER");
         app.setLastActionAt(Instant.now());
         filingApplicationRepository.save(app);
+        recordApplicationHistory(app, ApplicationHistoryAction.RETURNED_TO_CLERK, remarks, "PRESIDING_OFFICER", login);
         return buildActionResponse(app, "Application returned to clerk.");
     }
 
@@ -305,7 +339,20 @@ public class FilingApplicationService {
         app.setLastActionByRole("PRESIDING_OFFICER");
         app.setLastActionAt(Instant.now());
         filingApplicationRepository.save(app);
+        recordApplicationHistory(app, ApplicationHistoryAction.PO_REJECTED, remarks, "PRESIDING_OFFICER", login);
         return buildActionResponse(app, "Application rejected by PO.");
+    }
+
+    @Transactional(readOnly = true)
+    public ApplicationHistoryListResponse getApplicationHistory(Long applicationId, Principal principal) {
+        FilingApplication app = resolveFilerScopedApplication(applicationId, principal);
+        return buildApplicationHistoryList(app, false);
+    }
+
+    @Transactional(readOnly = true)
+    public ApplicationHistoryListResponse getOfficerApplicationHistory(Long applicationId, Principal principal) {
+        FilingApplication app = resolveOfficerHistoryScopedApplication(applicationId, principal);
+        return buildApplicationHistoryList(app, true);
     }
 
     @Transactional(readOnly = true)
@@ -416,6 +463,7 @@ public class FilingApplicationService {
         } else {
             out.setNotices(Collections.emptyList());
         }
+        out.setApplicationHistory(buildApplicationHistoryList(app, true));
         return out;
     }
 
@@ -445,6 +493,7 @@ public class FilingApplicationService {
         out.setNotices(caseNoticeRepository.findByCaseRegistryIdOrderByIdDesc(caseRow.getId()).stream()
                 .map(FilingApplicationService::toCaseNoticeResponse)
                 .collect(Collectors.toList()));
+        out.setApplicationHistory(buildApplicationHistoryList(app, true));
         return out;
     }
 
@@ -509,8 +558,8 @@ public class FilingApplicationService {
                 caseId,
                 caseNo,
                 caseStatus != null ? caseStatus : (app.getStatus() != null ? app.getStatus().name() : null),
-                caseId != null ? "CASE_PROCEEDINGS" : null,
-                null
+                caseId != null ? "CASE_PROCEEDINGS" : deriveProcessingStage(app),
+                caseId != null ? null : currentAssigneeRole(app)
         );
         application.setNotices(Collections.emptyList());
 
@@ -533,6 +582,7 @@ public class FilingApplicationService {
             out.setOrderSheetHistory(Collections.emptyList());
         }
 
+        out.setApplicationHistory(buildApplicationHistoryList(app, false));
         return out;
     }
 
@@ -1459,6 +1509,9 @@ public class FilingApplicationService {
     }
 
     private static String deriveProcessingStage(FilingApplication app) {
+        if (app.getStatus() == ApplicationStatus.DRAFT) {
+            return "DRAFT";
+        }
         if (Boolean.TRUE.equals(app.getPoApproved())) {
             return "PO_APPROVED_CASE_CREATED";
         }
@@ -1840,6 +1893,744 @@ public class FilingApplicationService {
         Long categoryId = row.getCaseCategory() != null ? row.getCaseCategory().getId() : null;
         long cat = categoryId != null ? categoryId : 0L;
         return String.format(Locale.ROOT, "CASE/%04d/CAT%d/%06d", year, cat, row.getId());
+    }
+
+    private FilingApplication resolveFilerScopedApplication(Long applicationId, Principal principal) {
+        if (applicationId == null) {
+            throw new IllegalArgumentException("applicationId is required.");
+        }
+        Objects.requireNonNull(principal);
+        String login = normalizeLogin(principal.getName());
+        FilingApplication app = filingApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new IllegalArgumentException("Application not found."));
+        assertPartyOwnership(app, login);
+        return app;
+    }
+
+    private FilingApplication resolveOfficerHistoryScopedApplication(Long applicationId, Principal principal) {
+        if (applicationId == null) {
+            throw new IllegalArgumentException("applicationId is required.");
+        }
+        Objects.requireNonNull(principal);
+        String login = normalizeLogin(principal.getName());
+        Long officeId = resolveOfficerCurrentOfficeId(login);
+
+        FilingApplication app = filingApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new IllegalArgumentException("Application not found."));
+        if (app.getOffice() == null || !Objects.equals(app.getOffice().getId(), officeId)) {
+            throw new IllegalArgumentException("Application not found for officer office.");
+        }
+        return app;
+    }
+
+    private ApplicationHistoryListResponse buildApplicationHistoryList(FilingApplication app, boolean officerView) {
+        List<ApplicationHistory> rows = applicationHistoryRepository.findByApplication_IdOrderByCreatedAtAscIdAsc(app.getId());
+        boolean filingSynthetic = rows.isEmpty();
+        List<ApplicationHistoryResponse> entries = filingSynthetic
+                ? buildSyntheticApplicationHistory(app)
+                : rows.stream().map(this::toApplicationHistoryResponse).collect(Collectors.toList());
+        for (ApplicationHistoryResponse entry : entries) {
+            entry.setPhase("FILING");
+        }
+
+        int filingCount = entries.size();
+        Long caseId = app.getRegisteredCaseId();
+        String caseNo = null;
+        if (caseId != null) {
+            CaseRegistry caseRow = caseRegistryRepository.findById(caseId).orElse(null);
+            caseNo = caseRow != null ? caseRow.getCaseNo() : null;
+            appendProceedingHistory(entries, app, caseId, caseNo, officerView);
+        }
+
+        sortHistoryEntries(entries);
+        assignSequenceAndApplicationId(entries, app.getId());
+
+        int proceedingCount = entries.size() - filingCount;
+        ApplicationHistoryListResponse out = new ApplicationHistoryListResponse();
+        out.setApplicationId(app.getId());
+        out.setApplicationNo(app.getApplicationNo());
+        out.setCaseId(caseId);
+        out.setCaseNo(caseNo);
+        out.setFilingCount(filingCount);
+        out.setProceedingCount(proceedingCount);
+        out.setStatus(app.getStatus() != null ? app.getStatus().name() : null);
+        String stage = caseId != null ? "CASE_PROCEEDINGS" : deriveProcessingStage(app);
+        out.setProcessingStage(stage);
+        out.setProcessingStageLabel(processingStageLabel(stage));
+        out.setCurrentAssigneeRole(caseId != null ? "PRESIDING_OFFICER" : currentAssigneeRole(app));
+        out.setSynthetic(filingSynthetic && proceedingCount == 0);
+        out.setTotalCount(entries.size());
+        out.setEntries(entries);
+        return out;
+    }
+
+    private void appendProceedingHistory(
+            List<ApplicationHistoryResponse> entries,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            boolean officerView
+    ) {
+        appendHearingHistory(entries, app, caseId, caseNo);
+        appendNoticeHistory(entries, app, caseId, caseNo, officerView);
+        appendOrderSheetHistory(entries, app, caseId, caseNo, officerView);
+        appendJudgmentHistory(entries, app, caseId, caseNo, officerView);
+    }
+
+    private void appendHearingHistory(
+            List<ApplicationHistoryResponse> entries,
+            FilingApplication app,
+            Long caseId,
+            String caseNo
+    ) {
+        for (CaseHearing hearing : caseHearingRepository.findByCaseRegistryIdOrderByHearingNoAsc(caseId)) {
+            String remarks = String.format(
+                    Locale.ROOT,
+                    "Hearing #%d on %s (%s)",
+                    hearing.getHearingNo(),
+                    hearing.getHearingDate(),
+                    hearing.getStatus()
+            );
+            entries.add(proceedingEntry(
+                    ApplicationHistoryAction.HEARING_SCHEDULED,
+                    hearing.getCreatedAt(),
+                    remarks,
+                    "CLERK",
+                    hearing.getCreatedByLoginId(),
+                    app,
+                    caseId,
+                    caseNo,
+                    "HEARING",
+                    hearing.getId(),
+                    hearing.getHearingNo(),
+                    hearing.getHearingDate(),
+                    null
+            ));
+        }
+    }
+
+    private void appendNoticeHistory(
+            List<ApplicationHistoryResponse> entries,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            boolean officerView
+    ) {
+        for (CaseNotice notice : caseNoticeRepository.findByCaseRegistryIdOrderByIdDesc(caseId)) {
+            if (officerView) {
+                appendOfficerNoticeMilestones(entries, app, caseId, caseNo, notice);
+            } else if (isPartyVisibleNoticeStatus(notice.getStatus())) {
+                appendPartyNoticeMilestone(entries, app, caseId, caseNo, notice);
+            }
+        }
+    }
+
+    private void appendOfficerNoticeMilestones(
+            List<ApplicationHistoryResponse> entries,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            CaseNotice notice
+    ) {
+        CaseNoticeStatus status = notice.getStatus();
+        if (status == null) {
+            return;
+        }
+        switch (status) {
+            case CLERK_DRAFT -> entries.add(noticeEntry(
+                    ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+            case PO_SCRUTINY -> {
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_IN_PO_SCRUTINY, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+            }
+            case PO_FINALIZED -> {
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_FINALIZED, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+            }
+            case PO_SIGNED -> {
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_FINALIZED, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_SIGNED, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+            }
+            case SERVED -> {
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                Instant servedAt = notice.getServedAt() != null ? notice.getServedAt() : notice.getUpdatedAt();
+                entries.add(noticeEntry(
+                        ApplicationHistoryAction.NOTICE_SERVED, servedAt, notice, app, caseId, caseNo));
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void appendPartyNoticeMilestone(
+            List<ApplicationHistoryResponse> entries,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            CaseNotice notice
+    ) {
+        ApplicationHistoryAction action = notice.getStatus() == CaseNoticeStatus.SERVED
+                ? ApplicationHistoryAction.NOTICE_SERVED
+                : ApplicationHistoryAction.NOTICE_FINALIZED;
+        Instant at = notice.getStatus() == CaseNoticeStatus.SERVED && notice.getServedAt() != null
+                ? notice.getServedAt()
+                : notice.getUpdatedAt();
+        entries.add(noticeEntry(action, at, notice, app, caseId, caseNo));
+    }
+
+    private ApplicationHistoryResponse noticeEntry(
+            ApplicationHistoryAction action,
+            Instant at,
+            CaseNotice notice,
+            FilingApplication app,
+            Long caseId,
+            String caseNo
+    ) {
+        String type = trimToNull(notice.getNoticeType());
+        String remarks = type != null ? type + " notice" : "Case notice";
+        if (notice.getHearing() != null && notice.getHearing().getHearingNo() != null) {
+            remarks = remarks + " (Hearing #" + notice.getHearing().getHearingNo() + ")";
+        }
+        Integer hearingNo = notice.getHearing() != null ? notice.getHearing().getHearingNo() : null;
+        LocalDate hearingDate = notice.getHearing() != null ? notice.getHearing().getHearingDate() : null;
+        return proceedingEntry(
+                action,
+                at,
+                remarks,
+                action == ApplicationHistoryAction.NOTICE_DRAFTED ? "CLERK" : "PRESIDING_OFFICER",
+                null,
+                app,
+                caseId,
+                caseNo,
+                "NOTICE",
+                notice.getId(),
+                hearingNo,
+                hearingDate,
+                type
+        );
+    }
+
+    private void appendOrderSheetHistory(
+            List<ApplicationHistoryResponse> entries,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            boolean officerView
+    ) {
+        Long orderSheetId = caseOrderSheetRepository.findByCaseRegistryId(caseId).map(CaseOrderSheet::getId).orElse(null);
+        List<CaseOrderSheetHistory> rows = new ArrayList<>(
+                caseOrderSheetHistoryRepository.findByCaseRegistryIdOrderByCreatedAtDesc(caseId)
+        );
+        rows.sort(Comparator.comparing(CaseOrderSheetHistory::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+        for (CaseOrderSheetHistory row : rows) {
+            String stage = parseOrderSheetHistoryStage(row.getRemarks());
+            ApplicationHistoryAction action = mapOrderSheetStageToAction(stage);
+            if (!officerView && action != ApplicationHistoryAction.ORDER_SHEET_SIGNED) {
+                continue;
+            }
+
+            Integer hearingNo = row.getCaseHearing() != null ? row.getCaseHearing().getHearingNo() : null;
+            LocalDate hearingDate = row.getCaseHearing() != null ? row.getCaseHearing().getHearingDate() : null;
+            String userRemarks = extractOrderSheetUserRemarks(row.getRemarks());
+            String label = orderSheetHistoryRemarks(action, hearingNo, hearingDate, userRemarks);
+
+            String actorRole = switch (action) {
+                case ORDER_SHEET_DRAFT_SAVED -> stage != null && stage.startsWith("PO") ? "PRESIDING_OFFICER" : "CLERK";
+                case ORDER_SHEET_SUBMITTED_TO_PO, ORDER_SHEET_FINALIZED, ORDER_SHEET_SIGNED -> "PRESIDING_OFFICER";
+                default -> "CLERK";
+            };
+
+            ApplicationHistoryResponse entry = proceedingEntry(
+                    action,
+                    row.getCreatedAt(),
+                    label,
+                    actorRole,
+                    row.getCreatedByLoginId(),
+                    app,
+                    caseId,
+                    caseNo,
+                    "ORDER_SHEET",
+                    orderSheetId != null ? orderSheetId : row.getId(),
+                    hearingNo,
+                    hearingDate,
+                    null
+            );
+            entry.setHistoryId(row.getId());
+            entries.add(entry);
+        }
+    }
+
+    /** One {@link CaseOrderSheet} per case; history rows are audit steps per hearing workflow. */
+    private static String parseOrderSheetHistoryStage(String remarks) {
+        String r = trimToNull(remarks);
+        if (r == null) {
+            return null;
+        }
+        int sep = r.indexOf(" | ");
+        return sep >= 0 ? r.substring(0, sep) : r;
+    }
+
+    private static String extractOrderSheetUserRemarks(String remarks) {
+        String r = trimToNull(remarks);
+        if (r == null) {
+            return null;
+        }
+        int sep = r.indexOf(" | ");
+        return sep >= 0 ? trimToNull(r.substring(sep + 3)) : null;
+    }
+
+    private static ApplicationHistoryAction mapOrderSheetStageToAction(String stage) {
+        if (stage == null) {
+            return ApplicationHistoryAction.ORDER_SHEET_DRAFT_SAVED;
+        }
+        return switch (stage) {
+            case "CLERK_DRAFT", "PO_DRAFT" -> ApplicationHistoryAction.ORDER_SHEET_DRAFT_SAVED;
+            case "PO_SCRUTINY" -> ApplicationHistoryAction.ORDER_SHEET_SUBMITTED_TO_PO;
+            case "PO_FINALIZED" -> ApplicationHistoryAction.ORDER_SHEET_FINALIZED;
+            case "PO_SIGNED" -> ApplicationHistoryAction.ORDER_SHEET_SIGNED;
+            default -> ApplicationHistoryAction.ORDER_SHEET_DRAFT_SAVED;
+        };
+    }
+
+    private static String orderSheetHistoryRemarks(
+            ApplicationHistoryAction action,
+            Integer hearingNo,
+            LocalDate hearingDate,
+            String userRemarks
+    ) {
+        String hearingPart = hearingNo != null
+                ? "Hearing #" + hearingNo + (hearingDate != null ? " (" + hearingDate + ")" : "")
+                : "Case order sheet";
+        String base = switch (action) {
+            case ORDER_SHEET_DRAFT_SAVED -> hearingPart + " — draft saved";
+            case ORDER_SHEET_SUBMITTED_TO_PO -> hearingPart + " — submitted to PO";
+            case ORDER_SHEET_FINALIZED -> hearingPart + " — finalized";
+            case ORDER_SHEET_SIGNED -> hearingPart + " — signed (proceeding recorded)";
+            default -> hearingPart;
+        };
+        return userRemarks != null ? base + ": " + userRemarks : base;
+    }
+
+    private void appendJudgmentHistory(
+            List<ApplicationHistoryResponse> entries,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            boolean officerView
+    ) {
+        Optional<CaseJudgmentWorkflow> judgmentOpt = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId);
+        if (judgmentOpt.isEmpty()) {
+            return;
+        }
+        CaseJudgmentWorkflow judgment = judgmentOpt.get();
+        CaseJudgmentWorkflowStatus status = judgment.getStatus();
+        if (status == null) {
+            return;
+        }
+        if (officerView) {
+            if (status == CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
+                entries.add(judgmentEntry(
+                        ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED,
+                        judgment.getUpdatedAt(),
+                        judgment,
+                        app,
+                        caseId,
+                        caseNo,
+                        judgment.getDraftedByLoginId()
+                ));
+            } else if (status == CaseJudgmentWorkflowStatus.PO_SCRUTINY) {
+                entries.add(judgmentEntry(
+                        ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED,
+                        judgment.getCreatedAt(),
+                        judgment,
+                        app,
+                        caseId,
+                        caseNo,
+                        judgment.getDraftedByLoginId()
+                ));
+                entries.add(judgmentEntry(
+                        ApplicationHistoryAction.JUDGMENT_SUBMITTED_TO_PO,
+                        judgment.getUpdatedAt(),
+                        judgment,
+                        app,
+                        caseId,
+                        caseNo,
+                        judgment.getDraftedByLoginId()
+                ));
+            } else if (status == CaseJudgmentWorkflowStatus.PO_FINALIZED) {
+                entries.add(judgmentEntry(
+                        ApplicationHistoryAction.JUDGMENT_FINALIZED,
+                        judgment.getUpdatedAt(),
+                        judgment,
+                        app,
+                        caseId,
+                        caseNo,
+                        judgment.getFinalizedByLoginId()
+                ));
+            } else if (status == CaseJudgmentWorkflowStatus.PUBLISHED) {
+                entries.add(judgmentEntry(
+                        ApplicationHistoryAction.JUDGMENT_PUBLISHED,
+                        judgment.getPublishedAt() != null ? judgment.getPublishedAt() : judgment.getUpdatedAt(),
+                        judgment,
+                        app,
+                        caseId,
+                        caseNo,
+                        judgment.getPublishedByLoginId()
+                ));
+            }
+        } else if (status == CaseJudgmentWorkflowStatus.PUBLISHED) {
+            entries.add(judgmentEntry(
+                    ApplicationHistoryAction.JUDGMENT_PUBLISHED,
+                    judgment.getPublishedAt() != null ? judgment.getPublishedAt() : judgment.getUpdatedAt(),
+                    judgment,
+                    app,
+                    caseId,
+                    caseNo,
+                    judgment.getPublishedByLoginId()
+            ));
+        }
+    }
+
+    private ApplicationHistoryResponse judgmentEntry(
+            ApplicationHistoryAction action,
+            Instant at,
+            CaseJudgmentWorkflow judgment,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            String actorLoginId
+    ) {
+        String summary = trimToNull(judgment.getPublishedSummary());
+        if (summary == null) {
+            summary = trimToNull(judgment.getFinalSummary());
+        }
+        if (summary == null) {
+            summary = trimToNull(judgment.getDraftSummary());
+        }
+        String remarks = summary != null && summary.length() > 200 ? summary.substring(0, 200) + "…" : summary;
+        return proceedingEntry(
+                action,
+                at,
+                remarks,
+                action == ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED ? "CLERK" : "PRESIDING_OFFICER",
+                actorLoginId,
+                app,
+                caseId,
+                caseNo,
+                "JUDGMENT",
+                judgment.getId(),
+                null,
+                null,
+                null
+        );
+    }
+
+    private ApplicationHistoryResponse proceedingEntry(
+            ApplicationHistoryAction action,
+            Instant createdAt,
+            String remarks,
+            String actorRole,
+            String actorLoginId,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            String referenceType,
+            Long referenceId,
+            Integer hearingNo,
+            LocalDate hearingDate,
+            String noticeType
+    ) {
+        ApplicationHistoryResponse out = new ApplicationHistoryResponse();
+        out.setPhase("PROCEEDING");
+        out.setHistoryId(null);
+        out.setApplicationId(app.getId());
+        out.setAction(action.name());
+        out.setActionLabel(actionLabel(action));
+        out.setRemarks(remarks);
+        out.setActorRole(actorRole);
+        out.setActorRoleLabel(actorRoleLabel(actorRole));
+        out.setActorLoginId(actorLoginId);
+        out.setApplicationNo(app.getApplicationNo());
+        out.setStatus(null);
+        out.setCaseId(caseId);
+        out.setCaseNo(caseNo);
+        out.setProcessingStage("CASE_PROCEEDINGS");
+        out.setProcessingStageLabel(processingStageLabel("CASE_PROCEEDINGS"));
+        out.setCreatedAt(createdAt != null ? createdAt : Instant.now());
+        out.setSynthetic(true);
+        out.setReferenceType(referenceType);
+        out.setReferenceId(referenceId);
+        out.setHearingNo(hearingNo);
+        out.setHearingDate(hearingDate);
+        out.setNoticeType(noticeType);
+        return out;
+    }
+
+    private static void sortHistoryEntries(List<ApplicationHistoryResponse> entries) {
+        entries.sort(Comparator
+                .comparing(ApplicationHistoryResponse::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(e -> e.getHistoryId() != null ? e.getHistoryId() : e.getReferenceId(), Comparator.nullsLast(Comparator.naturalOrder())));
+    }
+
+    private static String currentAssigneeRole(FilingApplication app) {
+        if (app.getStatus() == ApplicationStatus.DRAFT) {
+            return "FILER";
+        }
+        if (Boolean.TRUE.equals(app.getPoApproved()) || Boolean.TRUE.equals(app.getPoRejected())) {
+            return null;
+        }
+        return Boolean.TRUE.equals(app.getForwardedToPo()) ? "PRESIDING_OFFICER" : "CLERK";
+    }
+
+    private static void assignSequenceAndApplicationId(List<ApplicationHistoryResponse> entries, Long applicationId) {
+        int seq = 1;
+        for (ApplicationHistoryResponse entry : entries) {
+            entry.setSequence(seq++);
+            if (entry.getApplicationId() == null) {
+                entry.setApplicationId(applicationId);
+            }
+        }
+    }
+
+    private void recordApplicationHistory(
+            FilingApplication app,
+            ApplicationHistoryAction action,
+            String remarks,
+            String actorRole,
+            String actorLoginId
+    ) {
+        recordApplicationHistory(app, action, remarks, actorRole, actorLoginId, null, null);
+    }
+
+    private void recordApplicationHistory(
+            FilingApplication app,
+            ApplicationHistoryAction action,
+            String remarks,
+            String actorRole,
+            String actorLoginId,
+            Long caseId,
+            String caseNo
+    ) {
+        ApplicationHistory row = new ApplicationHistory();
+        row.setApplication(app);
+        row.setAction(action);
+        row.setRemarks(trimToNull(remarks));
+        row.setActorRole(trimToNull(actorRole));
+        row.setActorLoginId(requiredText(actorLoginId, "actorLoginId"));
+        row.setApplicationNo(trimToNull(app.getApplicationNo()));
+        row.setCaseId(caseId);
+        row.setCaseNo(trimToNull(caseNo));
+        row.setProcessingStage(deriveProcessingStage(app));
+        row.setApplicationStatus(app.getStatus());
+        applicationHistoryRepository.save(row);
+    }
+
+    private ApplicationHistoryResponse toApplicationHistoryResponse(ApplicationHistory row) {
+        ApplicationHistoryResponse out = new ApplicationHistoryResponse();
+        out.setHistoryId(row.getId());
+        Long appId = row.getApplication() != null ? row.getApplication().getId() : null;
+        out.setApplicationId(appId);
+        out.setAction(row.getAction() != null ? row.getAction().name() : null);
+        out.setActionLabel(actionLabel(row.getAction()));
+        out.setRemarks(row.getRemarks());
+        out.setActorRole(row.getActorRole());
+        out.setActorRoleLabel(actorRoleLabel(row.getActorRole()));
+        out.setActorLoginId(row.getActorLoginId());
+        out.setApplicationNo(row.getApplicationNo());
+        out.setStatus(row.getApplicationStatus() != null ? row.getApplicationStatus().name() : null);
+        out.setCaseId(row.getCaseId());
+        out.setCaseNo(row.getCaseNo());
+        out.setProcessingStage(row.getProcessingStage());
+        out.setProcessingStageLabel(processingStageLabel(row.getProcessingStage()));
+        out.setCreatedAt(row.getCreatedAt());
+        out.setSynthetic(false);
+        out.setPhase("FILING");
+        return out;
+    }
+
+    private static String actionLabel(ApplicationHistoryAction action) {
+        if (action == null) {
+            return "";
+        }
+        return switch (action) {
+            case DRAFT_SAVED -> "Draft saved";
+            case SUBMITTED -> "Application submitted";
+            case FORWARDED_TO_PO -> "Forwarded to Presiding Officer";
+            case RETURNED_TO_CLERK -> "Returned to clerk";
+            case PO_REJECTED -> "Rejected by Presiding Officer";
+            case CASE_REGISTERED -> "Case registered";
+            case HEARING_SCHEDULED -> "Hearing scheduled";
+            case NOTICE_DRAFTED -> "Notice drafted";
+            case NOTICE_IN_PO_SCRUTINY -> "Notice under PO scrutiny";
+            case NOTICE_FINALIZED -> "Notice finalized";
+            case NOTICE_SIGNED -> "Notice digitally signed";
+            case NOTICE_SERVED -> "Notice served";
+            case ORDER_SHEET_DRAFT_SAVED -> "Order sheet draft saved";
+            case ORDER_SHEET_SUBMITTED_TO_PO -> "Order sheet submitted to PO";
+            case ORDER_SHEET_FINALIZED -> "Order sheet finalized";
+            case ORDER_SHEET_SIGNED -> "Order sheet signed for hearing";
+            case JUDGMENT_DRAFT_SAVED -> "Judgment draft saved";
+            case JUDGMENT_SUBMITTED_TO_PO -> "Judgment submitted to PO";
+            case JUDGMENT_FINALIZED -> "Judgment finalized";
+            case JUDGMENT_PUBLISHED -> "Judgment published";
+        };
+    }
+
+    /**
+     * Reconstructs a readable timeline for applications created before history logging existed.
+     */
+    private List<ApplicationHistoryResponse> buildSyntheticApplicationHistory(FilingApplication app) {
+        List<ApplicationHistoryResponse> out = new ArrayList<>();
+        long seq = 0L;
+
+        String filerLogin = resolveFilerLoginId(app);
+        if (app.getCreatedAt() != null) {
+            out.add(syntheticHistoryRow(++seq, ApplicationHistoryAction.DRAFT_SAVED, app.getCreatedAt(),
+                    "Application created", filerActorRole(app), filerLogin, app.getApplicationNo(), app));
+        }
+        if (app.getSubmittedAt() != null) {
+            out.add(syntheticHistoryRow(++seq, ApplicationHistoryAction.SUBMITTED, app.getSubmittedAt(),
+                    "Application submitted", filerActorRole(app), filerLogin, app.getApplicationNo(), app));
+        }
+        if (hasText(app.getClerkRemarks()) || Boolean.TRUE.equals(app.getForwardedToPo())) {
+            Instant at = app.getLastActionAt() != null ? app.getLastActionAt() : app.getSubmittedAt();
+            out.add(syntheticHistoryRow(++seq, ApplicationHistoryAction.FORWARDED_TO_PO, at,
+                    app.getClerkRemarks(), "CLERK", null, app.getApplicationNo(), app));
+        }
+        if (Boolean.TRUE.equals(app.getSentBackToClerk()) && hasText(app.getPoRemarks())) {
+            Instant at = app.getLastActionAt() != null ? app.getLastActionAt() : app.getSubmittedAt();
+            out.add(syntheticHistoryRow(++seq, ApplicationHistoryAction.RETURNED_TO_CLERK, at,
+                    app.getPoRemarks(), "PRESIDING_OFFICER", app.getApprovedByOfficerLoginId(), app.getApplicationNo(), app));
+        }
+        if (Boolean.TRUE.equals(app.getPoRejected())) {
+            Instant at = app.getLastActionAt() != null ? app.getLastActionAt() : app.getSubmittedAt();
+            out.add(syntheticHistoryRow(++seq, ApplicationHistoryAction.PO_REJECTED, at,
+                    app.getPoRemarks(), "PRESIDING_OFFICER", app.getApprovedByOfficerLoginId(), app.getApplicationNo(), app));
+        }
+        if (app.getRegisteredCaseId() != null || Boolean.TRUE.equals(app.getPoApproved())) {
+            Instant at = app.getApprovedAt() != null ? app.getApprovedAt() : app.getLastActionAt();
+            String caseNo = null;
+            if (app.getRegisteredCaseId() != null) {
+                CaseRegistry caseRow = caseRegistryRepository.findById(app.getRegisteredCaseId()).orElse(null);
+                caseNo = caseRow != null ? caseRow.getCaseNo() : null;
+            }
+            ApplicationHistoryResponse row = syntheticHistoryRow(++seq, ApplicationHistoryAction.CASE_REGISTERED, at,
+                    "Case registered", "PRESIDING_OFFICER", app.getApprovedByOfficerLoginId(), app.getApplicationNo(), app);
+            row.setCaseId(app.getRegisteredCaseId());
+            row.setCaseNo(caseNo);
+            out.add(row);
+        }
+        return out;
+    }
+
+    private static ApplicationHistoryResponse syntheticHistoryRow(
+            long historyId,
+            ApplicationHistoryAction action,
+            Instant createdAt,
+            String remarks,
+            String actorRole,
+            String actorLoginId,
+            String applicationNo,
+            FilingApplication app
+    ) {
+        String stage = syntheticProcessingStageForAction(action);
+        ApplicationHistoryResponse out = new ApplicationHistoryResponse();
+        out.setHistoryId(historyId);
+        out.setApplicationId(app.getId());
+        out.setAction(action.name());
+        out.setActionLabel(actionLabel(action));
+        out.setRemarks(remarks);
+        out.setActorRole(actorRole);
+        out.setActorRoleLabel(actorRoleLabel(actorRole));
+        out.setActorLoginId(actorLoginId);
+        out.setApplicationNo(applicationNo);
+        out.setStatus(syntheticStatusForAction(action, app));
+        out.setProcessingStage(stage);
+        out.setProcessingStageLabel(processingStageLabel(stage));
+        out.setCreatedAt(createdAt);
+        out.setSynthetic(true);
+        out.setPhase("FILING");
+        return out;
+    }
+
+    private static String syntheticProcessingStageForAction(ApplicationHistoryAction action) {
+        return switch (action) {
+            case DRAFT_SAVED -> "DRAFT";
+            case SUBMITTED, RETURNED_TO_CLERK -> "CLERK_DRAFT_REVIEW";
+            case FORWARDED_TO_PO -> "PO_UNDER_REVIEW";
+            case PO_REJECTED -> "PO_REJECTED";
+            case CASE_REGISTERED -> "PO_APPROVED_CASE_CREATED";
+            default -> "CASE_PROCEEDINGS";
+        };
+    }
+
+    private static String syntheticStatusForAction(ApplicationHistoryAction action, FilingApplication app) {
+        return switch (action) {
+            case DRAFT_SAVED -> ApplicationStatus.DRAFT.name();
+            case SUBMITTED, FORWARDED_TO_PO, RETURNED_TO_CLERK, PO_REJECTED, CASE_REGISTERED ->
+                    app.getStatus() != null ? app.getStatus().name() : ApplicationStatus.SUBMITTED.name();
+            default -> app.getStatus() != null ? app.getStatus().name() : ApplicationStatus.SUBMITTED.name();
+        };
+    }
+
+    private static String processingStageLabel(String stage) {
+        if (stage == null || stage.isBlank()) {
+            return "";
+        }
+        return switch (stage) {
+            case "DRAFT" -> "Draft";
+            case "CLERK_DRAFT_REVIEW" -> "With clerk for review";
+            case "PO_UNDER_REVIEW" -> "With Presiding Officer";
+            case "PO_SENT_BACK_TO_CLERK" -> "Returned to clerk by PO";
+            case "PO_REJECTED" -> "Rejected by Presiding Officer";
+            case "PO_APPROVED_CASE_CREATED" -> "Case registered";
+            case "CASE_PROCEEDINGS" -> "Case proceedings";
+            default -> stage.replace('_', ' ').toLowerCase(Locale.ROOT);
+        };
+    }
+
+    private static String actorRoleLabel(String role) {
+        if (role == null || role.isBlank()) {
+            return "";
+        }
+        return switch (role) {
+            case "ADVOCATE" -> "Advocate";
+            case "PARTY_IN_PERSON" -> "Party in person";
+            case "PARTY_IN_PERSON_REPRESENTATIVE" -> "Party representative";
+            case "CLERK" -> "Clerk";
+            case "PRESIDING_OFFICER" -> "Presiding Officer";
+            case "FILER" -> "Filer";
+            default -> role.replace('_', ' ').toLowerCase(Locale.ROOT);
+        };
+    }
+
+    private static String filerActorRole(FilingApplication app) {
+        if (app.getFiledByAdvocate() != null) {
+            return "ADVOCATE";
+        }
+        if (app.getFiledByParty() != null && app.getFiledByParty().getRole() != null) {
+            return app.getFiledByParty().getRole().name();
+        }
+        return "PARTY_IN_PERSON";
+    }
+
+    private static String resolveFilerLoginId(FilingApplication app) {
+        if (app.getFiledByAdvocate() != null && hasText(app.getFiledByAdvocate().getEmail())) {
+            return app.getFiledByAdvocate().getEmail();
+        }
+        if (app.getFiledByParty() != null && hasText(app.getFiledByParty().getEmail())) {
+            return app.getFiledByParty().getEmail();
+        }
+        return null;
     }
 
     private static String buildTemporaryCaseNumber() {

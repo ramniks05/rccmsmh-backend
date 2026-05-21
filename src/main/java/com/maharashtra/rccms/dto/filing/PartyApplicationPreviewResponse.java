@@ -16,6 +16,7 @@ public class PartyApplicationPreviewResponse {
     private List<CaseNoticeResponse> notices = new ArrayList<>();
     private List<CaseHearingResponse> hearings = new ArrayList<>();
     private List<CaseOrderSheetHistoryResponse> orderSheetHistory = new ArrayList<>();
+    private ApplicationHistoryListResponse applicationHistory;
     private String judgmentWorkflowStatus;
     private String judgmentSummary;
 
@@ -49,6 +50,14 @@ public class PartyApplicationPreviewResponse {
 
     public void setOrderSheetHistory(List<CaseOrderSheetHistoryResponse> orderSheetHistory) {
         this.orderSheetHistory = orderSheetHistory;
+    }
+
+    public ApplicationHistoryListResponse getApplicationHistory() {
+        return applicationHistory;
+    }
+
+    public void setApplicationHistory(ApplicationHistoryListResponse applicationHistory) {
+        this.applicationHistory = applicationHistory;
     }
 
     public String getJudgmentWorkflowStatus() {

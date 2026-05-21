@@ -8,6 +8,7 @@ import com.maharashtra.rccms.dto.filing.OfficerApplicationDetailResponse;
 import com.maharashtra.rccms.dto.filing.OfficerCaseApprovalResponse;
 import com.maharashtra.rccms.dto.filing.OfficerInboxItemResponse;
 import com.maharashtra.rccms.dto.filing.PartyApplicationPreviewResponse;
+import com.maharashtra.rccms.dto.filing.ApplicationHistoryListResponse;
 import com.maharashtra.rccms.dto.filing.FilerApplicationListItemResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
 import com.maharashtra.rccms.service.FilingApplicationService;
@@ -67,6 +68,26 @@ public class FilingApplicationController {
     public ResponseEntity<?> officerApplicationDetail(@PathVariable("applicationId") Long applicationId, Principal principal) {
         try {
             OfficerApplicationDetailResponse result = filingApplicationService.getOfficerApplicationDetail(applicationId, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/{applicationId}/history")
+    public ResponseEntity<?> applicationHistory(@PathVariable("applicationId") Long applicationId, Principal principal) {
+        try {
+            ApplicationHistoryListResponse result = filingApplicationService.getApplicationHistory(applicationId, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/officer/{applicationId}/history")
+    public ResponseEntity<?> officerApplicationHistory(@PathVariable("applicationId") Long applicationId, Principal principal) {
+        try {
+            ApplicationHistoryListResponse result = filingApplicationService.getOfficerApplicationHistory(applicationId, principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));

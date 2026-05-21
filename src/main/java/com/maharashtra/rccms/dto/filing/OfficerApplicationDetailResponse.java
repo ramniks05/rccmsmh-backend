@@ -36,6 +36,7 @@ public class OfficerApplicationDetailResponse {
     private List<DisputedLandPayload> disputedLands = new ArrayList<>();
     private List<ApplicationAttachmentPayload> attachments = new ArrayList<>();
     private List<CaseNoticeResponse> notices = new ArrayList<>();
+    private ApplicationHistoryListResponse applicationHistory;
 
     public Long getApplicationId() {
         return applicationId;
@@ -251,5 +252,13 @@ public class OfficerApplicationDetailResponse {
 
     public void setNotices(List<CaseNoticeResponse> notices) {
         this.notices = notices;
+    }
+
+    public ApplicationHistoryListResponse getApplicationHistory() {
+        return applicationHistory;
+    }
+
+    public void setApplicationHistory(ApplicationHistoryListResponse applicationHistory) {
+        this.applicationHistory = applicationHistory;
     }
 }

@@ -632,6 +632,9 @@ public class FilingApplicationService {
             dto.setHearingDate(row.getHearingDate());
             dto.setStatus(row.getStatus());
             dto.setNoticeGenerated(row.getNoticeGenerated());
+            boolean noticeServed = Boolean.TRUE.equals(row.getNoticeServed());
+            dto.setNoticeServed(noticeServed);
+            dto.setProceedingAllowed(noticeServed);
             dto.setRemarks(row.getRemarks());
             dto.setCreatedAt(row.getCreatedAt());
             dto.setUpdatedAt(row.getUpdatedAt());
@@ -2037,31 +2040,31 @@ public class FilingApplicationService {
             return;
         }
         switch (status) {
-            case CLERK_DRAFT -> entries.add(noticeEntry(
-                    ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+            case CLERK_DRAFT, PO_DRAFT -> entries.add(noticeEntry(
+                    ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo, true));
             case PO_SCRUTINY -> {
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo, true));
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_IN_PO_SCRUTINY, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_IN_PO_SCRUTINY, notice.getUpdatedAt(), notice, app, caseId, caseNo, true));
             }
             case PO_FINALIZED -> {
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo, true));
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_FINALIZED, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_FINALIZED, notice.getUpdatedAt(), notice, app, caseId, caseNo, true));
             }
             case PO_SIGNED -> {
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo, true));
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_FINALIZED, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_FINALIZED, notice.getUpdatedAt(), notice, app, caseId, caseNo, true));
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_SIGNED, notice.getUpdatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_SIGNED, notice.getUpdatedAt(), notice, app, caseId, caseNo, true));
             }
             case SERVED -> {
                 entries.add(noticeEntry(
-                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo));
+                        ApplicationHistoryAction.NOTICE_DRAFTED, notice.getCreatedAt(), notice, app, caseId, caseNo, true));
                 Instant servedAt = notice.getServedAt() != null ? notice.getServedAt() : notice.getUpdatedAt();
                 entries.add(noticeEntry(
                         ApplicationHistoryAction.NOTICE_SERVED, servedAt, notice, app, caseId, caseNo));
@@ -2084,7 +2087,7 @@ public class FilingApplicationService {
         Instant at = notice.getStatus() == CaseNoticeStatus.SERVED && notice.getServedAt() != null
                 ? notice.getServedAt()
                 : notice.getUpdatedAt();
-        entries.add(noticeEntry(action, at, notice, app, caseId, caseNo));
+        entries.add(noticeEntry(action, at, notice, app, caseId, caseNo, true));
     }
 
     private ApplicationHistoryResponse noticeEntry(
@@ -2095,6 +2098,23 @@ public class FilingApplicationService {
             Long caseId,
             String caseNo
     ) {
+        boolean poDrafted = notice.getStatus() == CaseNoticeStatus.PO_DRAFT
+                || notice.getStatus() == CaseNoticeStatus.PO_SCRUTINY
+                || notice.getStatus() == CaseNoticeStatus.PO_FINALIZED
+                || notice.getStatus() == CaseNoticeStatus.PO_SIGNED
+                || notice.getStatus() == CaseNoticeStatus.SERVED;
+        return noticeEntry(action, at, notice, app, caseId, caseNo, poDrafted);
+    }
+
+    private ApplicationHistoryResponse noticeEntry(
+            ApplicationHistoryAction action,
+            Instant at,
+            CaseNotice notice,
+            FilingApplication app,
+            Long caseId,
+            String caseNo,
+            boolean poDrafted
+    ) {
         String type = trimToNull(notice.getNoticeType());
         String remarks = type != null ? type + " notice" : "Case notice";
         if (notice.getHearing() != null && notice.getHearing().getHearingNo() != null) {
@@ -2102,11 +2122,14 @@ public class FilingApplicationService {
         }
         Integer hearingNo = notice.getHearing() != null ? notice.getHearing().getHearingNo() : null;
         LocalDate hearingDate = notice.getHearing() != null ? notice.getHearing().getHearingDate() : null;
+        String actor = action == ApplicationHistoryAction.NOTICE_DRAFTED && !poDrafted
+                ? "CLERK"
+                : "PRESIDING_OFFICER";
         return proceedingEntry(
                 action,
                 at,
                 remarks,
-                action == ApplicationHistoryAction.NOTICE_DRAFTED ? "CLERK" : "PRESIDING_OFFICER",
+                actor,
                 null,
                 app,
                 caseId,

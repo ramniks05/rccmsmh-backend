@@ -27,6 +27,29 @@ public class WorkflowSchemaPatch implements ApplicationRunner {
         patchNoticeStatus();
         patchOrderSheetStatus();
         patchJudgmentWorkflowStatus();
+        patchHearingNoticeServed();
+    }
+
+    private void patchHearingNoticeServed() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COUNT(*) FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'case_hearing'
+                              AND column_name = 'notice_served'
+                            """,
+                    Integer.class
+            );
+            if (count == null || count == 0) {
+                jdbcTemplate.execute(
+                        "ALTER TABLE case_hearing ADD COLUMN notice_served BOOLEAN NOT NULL DEFAULT FALSE"
+                );
+                log.info("Added case_hearing.notice_served");
+            }
+        } catch (Exception ex) {
+            log.warn("Could not add case_hearing.notice_served: {}", ex.getMessage());
+        }
     }
 
     private void patchNoticeStatus() {
@@ -34,7 +57,7 @@ public class WorkflowSchemaPatch implements ApplicationRunner {
             jdbcTemplate.execute("ALTER TABLE case_notice DROP CONSTRAINT IF EXISTS case_notice_status_check");
             jdbcTemplate.execute("""
                     ALTER TABLE case_notice ADD CONSTRAINT case_notice_status_check
-                    CHECK (status IN ('CLERK_DRAFT', 'PO_SCRUTINY', 'PO_FINALIZED', 'PO_SIGNED', 'SERVED'))
+                    CHECK (status IN ('CLERK_DRAFT', 'PO_DRAFT', 'PO_SCRUTINY', 'PO_FINALIZED', 'PO_SIGNED', 'SERVED'))
                     """);
             log.info("Patched case_notice_status_check for PO_SCRUTINY");
         } catch (Exception ex) {
@@ -47,7 +70,7 @@ public class WorkflowSchemaPatch implements ApplicationRunner {
             jdbcTemplate.execute("ALTER TABLE case_order_sheet DROP CONSTRAINT IF EXISTS case_order_sheet_status_check");
             jdbcTemplate.execute("""
                     ALTER TABLE case_order_sheet ADD CONSTRAINT case_order_sheet_status_check
-                    CHECK (status IN ('CLERK_DRAFT', 'PO_SCRUTINY', 'PO_FINALIZED', 'PO_SIGNED'))
+                    CHECK (status IN ('CLERK_DRAFT', 'PO_DRAFT', 'PO_SCRUTINY', 'PO_FINALIZED', 'PO_SIGNED'))
                     """);
             log.info("Patched case_order_sheet_status_check for PO_SCRUTINY");
         } catch (Exception ex) {

@@ -13,6 +13,7 @@ import com.maharashtra.rccms.model.master.Subdistrict;
 import com.maharashtra.rccms.model.master.Taluka;
 import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
+import com.maharashtra.rccms.repository.StateRepository;
 import com.maharashtra.rccms.repository.SubdistrictRepository;
 import com.maharashtra.rccms.repository.TalukaRepository;
 import com.maharashtra.rccms.service.PincodeLookupService;
@@ -23,18 +24,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Read-only lookup APIs for logged-in users (advocate/party/etc.)
- * to build filing forms: district -> subdistrict -> taluka -> office.
+ * Read-only boundary lookups. States, districts, subdistricts, and pincode
+ * are public (registration/profile forms). Other lookups require login.
  */
 @RestController
 @RequestMapping("/api/lookups")
 @SuppressWarnings("null")
 public class LocationLookupController {
 
+    private final StateRepository stateRepository;
     private final DistrictRepository districtRepository;
     private final SubdistrictRepository subdistrictRepository;
     private final TalukaRepository talukaRepository;
@@ -42,17 +45,32 @@ public class LocationLookupController {
     private final PincodeLookupService pincodeLookupService;
 
     public LocationLookupController(
+            StateRepository stateRepository,
             DistrictRepository districtRepository,
             SubdistrictRepository subdistrictRepository,
             TalukaRepository talukaRepository,
             OfficeRepository officeRepository,
             PincodeLookupService pincodeLookupService
     ) {
+        this.stateRepository = stateRepository;
         this.districtRepository = districtRepository;
         this.subdistrictRepository = subdistrictRepository;
         this.talukaRepository = talukaRepository;
         this.officeRepository = officeRepository;
         this.pincodeLookupService = pincodeLookupService;
+    }
+
+    /**
+     * State dropdown (public — used on registration and profile forms).
+     * Example: GET /api/lookups/states
+     */
+    @GetMapping("/states")
+    public ResponseEntity<?> states() {
+        List<BoundaryMasterResponse> items = stateRepository.findAll().stream()
+                .sorted(Comparator.comparing(State::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(LocationLookupController::toStateResponse)
+                .toList();
+        return ResponseEntity.ok(items);
     }
 
     /**
@@ -137,6 +155,20 @@ public class LocationLookupController {
         } catch (IllegalStateException ex) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", ex.getMessage()));
         }
+    }
+
+    private static BoundaryMasterResponse toStateResponse(State state) {
+        return new BoundaryMasterResponse(
+                state.getId(),
+                state.getName(),
+                state.getLocalName(),
+                state.getLgdCode(),
+                state.getId(),
+                null,
+                null,
+                null,
+                null
+        );
     }
 
     private static BoundaryMasterResponse toDistrictResponse(District d) {

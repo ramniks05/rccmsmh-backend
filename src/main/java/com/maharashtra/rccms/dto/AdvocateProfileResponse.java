@@ -1,143 +1,63 @@
-package com.maharashtra.rccms.model;
-
-import com.maharashtra.rccms.util.AdvocateRegistrationSupport;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
+package com.maharashtra.rccms.dto;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "advocate_registration")
-public class AdvocateRegistration {
+public class AdvocateProfileResponse {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(name = "first_name", length = 80)
+    private String userType;
     private String firstName;
-
-    @Column(name = "middle_name", length = 80)
     private String middleName;
-
-    @Column(name = "last_name", length = 80)
     private String lastName;
-
-    @Column(nullable = false, length = 200)
     private String fullName;
-
-    @Column(nullable = false, unique = true, length = 150)
     private String email;
-
-    @Column(name = "mobile_number", nullable = false, length = 20)
     private String mobileNumber;
-
-    @Column(length = 500)
-    private String address;
-
-    @Column(name = "bar_enrollment_state", length = 80)
+    /** State LGD code (e.g. "27"). */
     private String barEnrollmentState;
-
-    @Column(name = "bar_enrollment_year")
+    private String barEnrollmentStateName;
     private Integer barEnrollmentYear;
-
-    @Column(name = "bar_enrollment_number", length = 80)
     private String barEnrollmentNumber;
-
-    @Column(name = "bar_council_number", nullable = false, length = 80)
-    private String barCouncilNumber;
-
-    @Column(name = "enrollment_number", nullable = false, length = 80)
-    private String enrollmentNumber;
-
-    @Column(name = "place_of_practice_state", length = 80)
+    /** State LGD code for place of practice. */
     private String placeOfPracticeState;
-
-    @Column(name = "place_of_practice_district", length = 120)
+    private String placeOfPracticeStateName;
+    /** District LGD code (e.g. "530"). */
     private String placeOfPracticeDistrict;
-
-    @Column(name = "bar_enrollment_certificate_storage_key", length = 512)
+    private String placeOfPracticeDistrictName;
     private String barEnrollmentCertificateStorageKey;
-
-    @Column(name = "bar_enrollment_certificate_file_name", length = 255)
     private String barEnrollmentCertificateFileName;
-
-    @Column(length = 120)
-    private String lawFirmName;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 16)
-    private Gender gender;
-
-    @Column(name = "pin_code", length = 6)
+    private boolean barEnrollmentCertificateUploaded;
+    private String gender;
     private String pinCode;
-
-    @Column(name = "state_id")
     private Long stateId;
-
-    @Column(name = "state_name", length = 120)
     private String stateName;
-
-    @Column(name = "district_id")
     private Long districtId;
-
-    @Column(name = "district_name", length = 120)
     private String districtName;
-
-    @Column(name = "subdistrict_id")
     private Long subdistrictId;
-
-    @Column(name = "subdistrict_name", length = 120)
     private String subdistrictName;
-
-    @Column(length = 120)
     private String village;
-
-    @Column(name = "address_line_1", length = 255)
     private String addressLine1;
-
-    @Column(name = "address_line_2", length = 255)
     private String addressLine2;
-
-    @Column(name = "address_line_3", length = 255)
     private String addressLine3;
-
-    @Column(name = "profile_complete", nullable = false)
+    private String address;
+    private String lawFirmName;
     private boolean profileComplete;
-
-    @Column(length = 255)
-    private String passwordHash;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
-
-    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
-
-    @PrePersist
-    public void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-        AdvocateRegistrationSupport.syncDerivedFields(this);
-    }
-
-    @PreUpdate
-    public void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
-        AdvocateRegistrationSupport.syncDerivedFields(this);
-    }
 
     public Long getId() {
         return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getUserType() {
+        return userType;
+    }
+
+    public void setUserType(String userType) {
+        this.userType = userType;
     }
 
     public String getFirstName() {
@@ -188,20 +108,20 @@ public class AdvocateRegistration {
         this.mobileNumber = mobileNumber;
     }
 
-    public String getAddress() {
-        return address;
-    }
-
-    public void setAddress(String address) {
-        this.address = address;
-    }
-
     public String getBarEnrollmentState() {
         return barEnrollmentState;
     }
 
     public void setBarEnrollmentState(String barEnrollmentState) {
         this.barEnrollmentState = barEnrollmentState;
+    }
+
+    public String getBarEnrollmentStateName() {
+        return barEnrollmentStateName;
+    }
+
+    public void setBarEnrollmentStateName(String barEnrollmentStateName) {
+        this.barEnrollmentStateName = barEnrollmentStateName;
     }
 
     public Integer getBarEnrollmentYear() {
@@ -220,22 +140,6 @@ public class AdvocateRegistration {
         this.barEnrollmentNumber = barEnrollmentNumber;
     }
 
-    public String getBarCouncilNumber() {
-        return barCouncilNumber;
-    }
-
-    public void setBarCouncilNumber(String barCouncilNumber) {
-        this.barCouncilNumber = barCouncilNumber;
-    }
-
-    public String getEnrollmentNumber() {
-        return enrollmentNumber;
-    }
-
-    public void setEnrollmentNumber(String enrollmentNumber) {
-        this.enrollmentNumber = enrollmentNumber;
-    }
-
     public String getPlaceOfPracticeState() {
         return placeOfPracticeState;
     }
@@ -244,12 +148,28 @@ public class AdvocateRegistration {
         this.placeOfPracticeState = placeOfPracticeState;
     }
 
+    public String getPlaceOfPracticeStateName() {
+        return placeOfPracticeStateName;
+    }
+
+    public void setPlaceOfPracticeStateName(String placeOfPracticeStateName) {
+        this.placeOfPracticeStateName = placeOfPracticeStateName;
+    }
+
     public String getPlaceOfPracticeDistrict() {
         return placeOfPracticeDistrict;
     }
 
     public void setPlaceOfPracticeDistrict(String placeOfPracticeDistrict) {
         this.placeOfPracticeDistrict = placeOfPracticeDistrict;
+    }
+
+    public String getPlaceOfPracticeDistrictName() {
+        return placeOfPracticeDistrictName;
+    }
+
+    public void setPlaceOfPracticeDistrictName(String placeOfPracticeDistrictName) {
+        this.placeOfPracticeDistrictName = placeOfPracticeDistrictName;
     }
 
     public String getBarEnrollmentCertificateStorageKey() {
@@ -268,19 +188,19 @@ public class AdvocateRegistration {
         this.barEnrollmentCertificateFileName = barEnrollmentCertificateFileName;
     }
 
-    public String getLawFirmName() {
-        return lawFirmName;
+    public boolean isBarEnrollmentCertificateUploaded() {
+        return barEnrollmentCertificateUploaded;
     }
 
-    public void setLawFirmName(String lawFirmName) {
-        this.lawFirmName = lawFirmName;
+    public void setBarEnrollmentCertificateUploaded(boolean barEnrollmentCertificateUploaded) {
+        this.barEnrollmentCertificateUploaded = barEnrollmentCertificateUploaded;
     }
 
-    public Gender getGender() {
+    public String getGender() {
         return gender;
     }
 
-    public void setGender(Gender gender) {
+    public void setGender(String gender) {
         this.gender = gender;
     }
 
@@ -372,6 +292,22 @@ public class AdvocateRegistration {
         this.addressLine3 = addressLine3;
     }
 
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public String getLawFirmName() {
+        return lawFirmName;
+    }
+
+    public void setLawFirmName(String lawFirmName) {
+        this.lawFirmName = lawFirmName;
+    }
+
     public boolean isProfileComplete() {
         return profileComplete;
     }
@@ -380,19 +316,19 @@ public class AdvocateRegistration {
         this.profileComplete = profileComplete;
     }
 
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public void setPasswordHash(String passwordHash) {
-        this.passwordHash = passwordHash;
-    }
-
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
 
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 }

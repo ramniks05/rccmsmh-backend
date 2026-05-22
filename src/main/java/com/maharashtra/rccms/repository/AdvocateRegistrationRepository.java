@@ -10,4 +10,8 @@ public interface AdvocateRegistrationRepository extends JpaRepository<AdvocateRe
     Optional<AdvocateRegistration> findByEmail(String email);
 
     Optional<AdvocateRegistration> findFirstByBarCouncilNumberIgnoreCaseOrderByIdAsc(String barCouncilNumber);
+
+    boolean existsByBarEnrollmentNumberIgnoreCase(String barEnrollmentNumber);
+
+    Optional<AdvocateRegistration> findFirstByBarEnrollmentNumberIgnoreCaseOrderByIdAsc(String barEnrollmentNumber);
 }

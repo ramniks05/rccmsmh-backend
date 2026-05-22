@@ -49,9 +49,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/auth/login", "/api/registrations/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/lookups/pincode-details").hasAnyRole(
-                                "ADMIN", "ADVOCATE", "PARTY_IN_PERSON", "PARTY_IN_PERSON_REPRESENTATIVE", "OFFICER")
+                        .requestMatchers(HttpMethod.POST, "/api/files/upload").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/lookups/states",
+                                "/api/lookups/districts",
+                                "/api/lookups/subdistricts",
+                                "/api/lookups/pincode-details"
+                        ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/lookups/**").authenticated()
+                        .requestMatchers("/api/advocates/me/**").hasRole("ADVOCATE")
                         .requestMatchers("/api/filing-applications/officer/**").hasRole("OFFICER")
                         .requestMatchers("/api/cases/officer/**").hasRole("OFFICER")
                         .requestMatchers("/api/filing-applications/**").hasAnyRole(

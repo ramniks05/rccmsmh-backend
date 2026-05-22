@@ -1,8 +1,10 @@
 package com.maharashtra.rccms.controller;
 
 import com.maharashtra.rccms.dto.AdvocateLookupResponse;
+import com.maharashtra.rccms.dto.AdvocateProfileResponse;
 import com.maharashtra.rccms.model.AdvocateRegistration;
 import com.maharashtra.rccms.repository.AdvocateRegistrationRepository;
+import com.maharashtra.rccms.service.AdvocateProfileService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,9 +23,14 @@ import java.util.Optional;
 public class AdvocateLookupController {
 
     private final AdvocateRegistrationRepository advocateRegistrationRepository;
+    private final AdvocateProfileService advocateProfileService;
 
-    public AdvocateLookupController(AdvocateRegistrationRepository advocateRegistrationRepository) {
+    public AdvocateLookupController(
+            AdvocateRegistrationRepository advocateRegistrationRepository,
+            AdvocateProfileService advocateProfileService
+    ) {
         this.advocateRegistrationRepository = advocateRegistrationRepository;
+        this.advocateProfileService = advocateProfileService;
     }
 
     /**
@@ -34,25 +41,43 @@ public class AdvocateLookupController {
         if (barCouncilNumber == null || barCouncilNumber.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "barCouncilNumber is required"));
         }
+        String key = barCouncilNumber.trim();
         Optional<AdvocateRegistration> found = advocateRegistrationRepository
-                .findFirstByBarCouncilNumberIgnoreCaseOrderByIdAsc(barCouncilNumber.trim());
+                .findFirstByBarEnrollmentNumberIgnoreCaseOrderByIdAsc(key);
+        if (found.isEmpty()) {
+            found = advocateRegistrationRepository.findFirstByBarCouncilNumberIgnoreCaseOrderByIdAsc(key);
+        }
         if (found.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "No advocate found for this bar council number"));
         }
         return ResponseEntity.ok(toResponse(found.get()));
     }
 
-    private static AdvocateLookupResponse toResponse(AdvocateRegistration r) {
+    private AdvocateLookupResponse toResponse(AdvocateRegistration r) {
+        AdvocateProfileResponse profile = advocateProfileService.toProfileResponse(r);
+        String enrollment = profile.getBarEnrollmentNumber();
         return new AdvocateLookupResponse(
-                r.getId(),
-                r.getFullName(),
-                r.getEmail(),
-                r.getMobileNumber(),
-                r.getAddress(),
-                r.getBarCouncilNumber(),
-                r.getEnrollmentNumber(),
-                r.getLawFirmName(),
-                r.getCreatedAt()
+                profile.getId(),
+                profile.getFullName(),
+                profile.getFirstName(),
+                profile.getMiddleName(),
+                profile.getLastName(),
+                profile.getEmail(),
+                profile.getMobileNumber(),
+                profile.getAddress(),
+                profile.getBarEnrollmentState(),
+                profile.getBarEnrollmentStateName(),
+                profile.getBarEnrollmentYear(),
+                enrollment,
+                enrollment,
+                enrollment,
+                profile.getPlaceOfPracticeState(),
+                profile.getPlaceOfPracticeStateName(),
+                profile.getPlaceOfPracticeDistrict(),
+                profile.getPlaceOfPracticeDistrictName(),
+                profile.getLawFirmName(),
+                profile.isProfileComplete(),
+                profile.getCreatedAt()
         );
     }
 }

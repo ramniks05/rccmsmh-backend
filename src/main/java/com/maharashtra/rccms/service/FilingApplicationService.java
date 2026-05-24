@@ -1,6 +1,7 @@
 package com.maharashtra.rccms.service;
 
 import com.maharashtra.rccms.dto.filing.*;
+import com.maharashtra.rccms.filing.FilingJsonCodec;
 import com.maharashtra.rccms.model.AdvocateRegistration;
 import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
@@ -19,6 +20,11 @@ import com.maharashtra.rccms.model.caseflow.CaseOrderSheetHistory;
 import com.maharashtra.rccms.model.filing.*;
 import com.maharashtra.rccms.model.master.*;
 import com.maharashtra.rccms.repository.*;
+import com.maharashtra.rccms.workflow.WorkflowAction;
+import com.maharashtra.rccms.workflow.config.CaseWorkflowDefinition;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +66,13 @@ public class FilingApplicationService {
     private final CaseOrderSheetHistoryRepository caseOrderSheetHistoryRepository;
     private final CaseJudgmentWorkflowRepository caseJudgmentWorkflowRepository;
     private final ApplicationHistoryRepository applicationHistoryRepository;
+    private final WorkflowPolicyService workflowPolicyService;
+    private final CaseWorkflowConfigService caseWorkflowConfigService;
+    private final CaseJudgmentWorkflowHistoryRepository judgmentWorkflowHistoryRepository;
+    private final FilingApplicationChildCleanup filingApplicationChildCleanup;
+    private final ApplicationDocumentChecklistService applicationDocumentChecklistService;
+    private final DocumentTypeRepository documentTypeRepository;
+    private final FilingJsonCodec filingJsonCodec;
 
     public FilingApplicationService(
             FilingApplicationRepository filingApplicationRepository,
@@ -81,7 +94,14 @@ public class FilingApplicationService {
             CaseOrderSheetRepository caseOrderSheetRepository,
             CaseOrderSheetHistoryRepository caseOrderSheetHistoryRepository,
             CaseJudgmentWorkflowRepository caseJudgmentWorkflowRepository,
-            ApplicationHistoryRepository applicationHistoryRepository
+            ApplicationHistoryRepository applicationHistoryRepository,
+            WorkflowPolicyService workflowPolicyService,
+            CaseWorkflowConfigService caseWorkflowConfigService,
+            CaseJudgmentWorkflowHistoryRepository judgmentWorkflowHistoryRepository,
+            FilingApplicationChildCleanup filingApplicationChildCleanup,
+            ApplicationDocumentChecklistService applicationDocumentChecklistService,
+            DocumentTypeRepository documentTypeRepository,
+            FilingJsonCodec filingJsonCodec
     ) {
         this.filingApplicationRepository = filingApplicationRepository;
         this.caseRegistryRepository = caseRegistryRepository;
@@ -103,6 +123,13 @@ public class FilingApplicationService {
         this.caseOrderSheetHistoryRepository = caseOrderSheetHistoryRepository;
         this.caseJudgmentWorkflowRepository = caseJudgmentWorkflowRepository;
         this.applicationHistoryRepository = applicationHistoryRepository;
+        this.workflowPolicyService = workflowPolicyService;
+        this.caseWorkflowConfigService = caseWorkflowConfigService;
+        this.judgmentWorkflowHistoryRepository = judgmentWorkflowHistoryRepository;
+        this.filingApplicationChildCleanup = filingApplicationChildCleanup;
+        this.applicationDocumentChecklistService = applicationDocumentChecklistService;
+        this.documentTypeRepository = documentTypeRepository;
+        this.filingJsonCodec = filingJsonCodec;
     }
 
     @Transactional
@@ -124,7 +151,7 @@ public class FilingApplicationService {
 
         UUID clientRef = parseClientRef(payload.getClientApplicationRef());
 
-        FilingApplication entity = locateOrCreate(payload.getApplicationId(), clientRef);
+        FilingApplication entity = locateOrCreate(zeroToNull(payload.getApplicationId()), clientRef);
         boolean isNewApplication = entity.getId() == null;
         ApplicationStatus previousStatus = isNewApplication
                 ? null
@@ -133,15 +160,16 @@ public class FilingApplicationService {
         CaseCategory category = caseCategoryRepository.findById(requiredId(payload.getCaseCategoryId(), "caseCategoryId"))
                 .orElseThrow(() -> new IllegalArgumentException("Invalid caseCategoryId."));
 
-        if (entity.getId() != null && payload.getForm() == null) {
-            throw new IllegalArgumentException("Nested form envelope is required when updating an existing application.");
+        if (entity.getId() != null && payload.getForm() == null && !hasEvolvedSaveSections(payload)) {
+            throw new IllegalArgumentException(
+                    "Provide nested form or at least one of header, description, parties, disputed order/lands, attachments, or vakalatnama when updating.");
         }
 
         if (entity.getId() != null) {
             assertOwnership(entity, advocateFiler, partyFiler);
         }
 
-        clearChildren(entity);
+        entity = replaceApplicationChildren(entity);
 
         entity.setCaseCategory(category);
         entity.setStatus(status);
@@ -150,18 +178,27 @@ public class FilingApplicationService {
         }
         attachFiler(entity, advocateFiler, partyFiler);
 
+        boolean submit = status == ApplicationStatus.SUBMITTED;
         ApplicationFormNestedPayload form = payload.getForm();
         if (form != null) {
             applyFormHeader(entity, form);
-            applyApplicants(entity, form.getApplicants(), status == ApplicationStatus.SUBMITTED);
-            applyRespondents(entity, form.getRespondents(), status == ApplicationStatus.SUBMITTED);
+            applyApplicants(entity, form.getApplicants(), submit);
+            applyRespondents(entity, form.getRespondents(), submit);
             List<VakalatnamaGroupPayload> vakCombined = combineVakalatnama(
                     payload.getVakalatnamaAssignments(),
                     form.getVakalatnamaAssignments());
             applyVakalatnamaGroups(entity, vakCombined, principal.getName());
         } else {
+            ApplicationFilingHeaderPayload header = payload.getHeader();
+            if (header != null) {
+                applyFilingHeader(entity, header);
+            }
+            applyApplicants(entity, payload.getApplicants(), submit);
+            applyRespondents(entity, payload.getRespondents(), submit);
             applyVakalatnamaGroups(entity, payload.getVakalatnamaAssignments(), principal.getName());
         }
+
+        applyDescription(entity, payload.getDescription());
 
         ApplicationDisputedOrderPayload mergedDisputed = mergeDisputedEnvelope(payload);
         applyDisputedOrder(entity, mergedDisputed);
@@ -169,12 +206,16 @@ public class FilingApplicationService {
         applyDisputedLands(entity, payload.getDisputedLands());
         fillOfficeFromDisputedLandsIfMissing(entity);
         applyAttachments(entity, payload.getAttachments(), principal.getName());
+        storeFormSnapshot(entity, payload);
 
         if (status == ApplicationStatus.SUBMITTED) {
+            applicationDocumentChecklistService.validateMappedAttachmentDocumentTypes(entity);
             validateSubmission(entity);
+            applicationDocumentChecklistService.validateRequiredUploadsOnSubmit(entity);
         }
 
         entity = filingApplicationRepository.save(entity);
+        applicationDocumentChecklistService.syncChecklistFromApplication(entity);
         filingApplicationRepository.flush();
         entity = ensureApplicationNumber(entity);
         entity = ensureInitialClerkFlagsOnSubmit(entity, principal.getName());
@@ -219,6 +260,7 @@ public class FilingApplicationService {
         if (!Boolean.TRUE.equals(app.getForwardedToPo()) || Boolean.TRUE.equals(app.getPoRejected())) {
             throw new IllegalArgumentException("Application is not forwarded to PO review.");
         }
+        requireFilingAction(app, posting, WorkflowAction.PO_ACCEPT_CASE);
 
         app = ensureApplicationNumber(app);
 
@@ -288,6 +330,9 @@ public class FilingApplicationService {
         if (Boolean.TRUE.equals(app.getPoApproved()) || Boolean.TRUE.equals(app.getPoRejected())) {
             throw new IllegalArgumentException("Application already finalized.");
         }
+        requireFilingAction(app, posting, WorkflowAction.FORWARD_TO_PO);
+        applicationDocumentChecklistService.syncChecklistFromApplication(app);
+        applicationDocumentChecklistService.assertClerkVerificationCompleteForForward(app);
         app.setForwardedToPo(true);
         app.setSentBackToClerk(false);
         app.setClerkRemarks(remarks);
@@ -310,6 +355,7 @@ public class FilingApplicationService {
         if (!Boolean.TRUE.equals(app.getForwardedToPo())) {
             throw new IllegalArgumentException("Application is not in PO review.");
         }
+        requireFilingAction(app, posting, WorkflowAction.PO_RETURN_TO_CLERK);
         app.setForwardedToPo(false);
         app.setSentBackToClerk(true);
         app.setPoRemarks(remarks);
@@ -332,6 +378,7 @@ public class FilingApplicationService {
         if (!Boolean.TRUE.equals(app.getForwardedToPo())) {
             throw new IllegalArgumentException("Application is not in PO review.");
         }
+        requireFilingAction(app, posting, WorkflowAction.PO_REJECT);
         app.setPoRejected(true);
         app.setForwardedToPo(false);
         app.setSentBackToClerk(false);
@@ -463,8 +510,37 @@ public class FilingApplicationService {
         } else {
             out.setNotices(Collections.emptyList());
         }
+        CaseWorkflowDefinition def = caseWorkflowConfigService.resolveForCategory(app.getCaseCategory());
+        out.setBlueprintCode(def.getBlueprintCode());
+        out.setAllowedActions(workflowPolicyService.filingAllowedActions(app, posting));
         out.setApplicationHistory(buildApplicationHistoryList(app, true));
+        enrichDocumentChecklist(out, app);
         return out;
+    }
+
+    @Transactional(readOnly = true)
+    public ApplicationDocumentChecklistResponse getOfficerDocumentChecklist(Long applicationId, Principal principal) {
+        FilingApplication app = resolveOfficerScopedApplicationForRead(applicationId, principal);
+        applicationDocumentChecklistService.syncChecklistFromApplication(app);
+        return applicationDocumentChecklistService.getChecklist(app);
+    }
+
+    @Transactional
+    public ApplicationDocumentChecklistResponse saveOfficerDocumentChecklist(
+            Long applicationId,
+            ApplicationDocumentChecklistSaveRequest request,
+            Principal principal
+    ) {
+        String login = normalizeLogin(principal.getName());
+        EmployeePosting posting = resolveOfficerCurrentPosting(login);
+        if (isPresidingOfficer(posting)) {
+            throw new IllegalArgumentException("Only clerk can verify application documents.");
+        }
+        FilingApplication app = resolveOfficerScopedApplication(applicationId, posting.getOffice().getId());
+        if (Boolean.TRUE.equals(app.getPoApproved()) || Boolean.TRUE.equals(app.getPoRejected())) {
+            throw new IllegalArgumentException("Application already finalized.");
+        }
+        return applicationDocumentChecklistService.saveClerkVerification(app, request, login);
     }
 
     @Transactional(readOnly = true)
@@ -493,8 +569,32 @@ public class FilingApplicationService {
         out.setNotices(caseNoticeRepository.findByCaseRegistryIdOrderByIdDesc(caseRow.getId()).stream()
                 .map(FilingApplicationService::toCaseNoticeResponse)
                 .collect(Collectors.toList()));
+        EmployeePosting posting = resolveOfficerCurrentPosting(login);
+        CaseWorkflowDefinition def = caseWorkflowConfigService.resolveForCategory(caseRow.getCaseCategory());
+        out.setBlueprintCode(def.getBlueprintCode());
+        out.setAllowedActions(workflowPolicyService.filingAllowedActions(app, posting));
         out.setApplicationHistory(buildApplicationHistoryList(app, true));
+        enrichDocumentChecklist(out, app);
         return out;
+    }
+
+    private void enrichDocumentChecklist(OfficerApplicationDetailResponse out, FilingApplication app) {
+        if (out == null || app == null || app.getId() == null) {
+            return;
+        }
+        applicationDocumentChecklistService.syncChecklistFromApplication(app);
+        out.setDocumentChecklist(applicationDocumentChecklistService.getChecklist(app));
+    }
+
+    private FilingApplication resolveOfficerScopedApplicationForRead(Long applicationId, Principal principal) {
+        Objects.requireNonNull(principal);
+        String login = normalizeLogin(principal.getName());
+        EmployeePosting posting = resolveOfficerCurrentPosting(login);
+        Long officeId = posting.getOffice() != null ? posting.getOffice().getId() : null;
+        if (officeId == null) {
+            throw new IllegalArgumentException("Officer current posting office is missing.");
+        }
+        return resolveOfficerScopedApplication(applicationId, officeId);
     }
 
     @Transactional(readOnly = true)
@@ -536,12 +636,23 @@ public class FilingApplicationService {
             throw new IllegalArgumentException("applicationId is required.");
         }
         Objects.requireNonNull(principal);
+        if (isOfficerPrincipal(principal)) {
+            return getOfficerApplicationPreview(applicationId, principal);
+        }
         String login = normalizeLogin(principal.getName());
-
         FilingApplication app = filingApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new IllegalArgumentException("Application not found."));
         assertPartyOwnership(app, login);
+        return buildApplicationPreview(app, false);
+    }
 
+    @Transactional(readOnly = true)
+    public PartyApplicationPreviewResponse getOfficerApplicationPreview(Long applicationId, Principal principal) {
+        FilingApplication app = resolveOfficerHistoryScopedApplication(applicationId, principal);
+        return buildApplicationPreview(app, true);
+    }
+
+    private PartyApplicationPreviewResponse buildApplicationPreview(FilingApplication app, boolean officerView) {
         Long caseId = app.getRegisteredCaseId();
         String caseNo = null;
         String caseStatus = null;
@@ -567,7 +678,13 @@ public class FilingApplicationService {
         out.setApplication(application);
 
         if (caseId != null) {
-            out.setNotices(loadPartyVisibleNotices(caseId));
+            if (officerView) {
+                out.setNotices(caseNoticeRepository.findByCaseRegistryIdOrderByIdDesc(caseId).stream()
+                        .map(FilingApplicationService::toCaseNoticeResponse)
+                        .collect(Collectors.toList()));
+            } else {
+                out.setNotices(loadPartyVisibleNotices(caseId));
+            }
             out.setHearings(loadCaseHearingsForParty(caseId, caseNo));
             out.setOrderSheetHistory(loadOrderSheetHistoryForParty(caseId));
             caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).ifPresent(judgment -> {
@@ -582,7 +699,7 @@ public class FilingApplicationService {
             out.setOrderSheetHistory(Collections.emptyList());
         }
 
-        out.setApplicationHistory(buildApplicationHistoryList(app, false));
+        out.setApplicationHistory(buildApplicationHistoryList(app, officerView));
         return out;
     }
 
@@ -676,8 +793,8 @@ public class FilingApplicationService {
         if (o.getMutationDetails() == null && p.getMutationDetails() != null) {
             o.setMutationDetails(p.getMutationDetails());
         }
-        if (o.getNotice9Resolved() == null && p.getNotice9Resolved() != null) {
-            o.setNotice9Resolved(p.getNotice9Resolved());
+        if (o.getNotice9() == null && p.getNotice9Resolved() != null) {
+            o.setNotice9(p.getNotice9Resolved());
         }
         return o;
     }
@@ -697,19 +814,62 @@ public class FilingApplicationService {
         return Collections.emptyList();
     }
 
-    private static void clearChildren(FilingApplication entity) {
+    /**
+     * Wipes nested rows before replace-on-save. DB deletes are required because
+     * {@code JpaRepository.save()} merges existing aggregates and orphanRemoval on {@code clear()}
+     * does not always delete old rows before new inserts (duplicate {@code client_row_key}).
+     */
+    private FilingApplication replaceApplicationChildren(FilingApplication entity) {
+        Long applicationId = entity.getId();
+        if (applicationId != null) {
+            filingApplicationChildCleanup.deleteAllChildren(applicationId);
+            entity = filingApplicationChildCleanup.reloadApplication(applicationId);
+            if (entity == null) {
+                throw new IllegalArgumentException("Application not found.");
+            }
+        }
         entity.setDisputedOrder(null);
+        entity.getVakalatnamaGroups().clear();
         entity.getApplicants().clear();
         entity.getRespondents().clear();
-        entity.getVakalatnamaGroups().clear();
         entity.getDisputedLands().clear();
         entity.getAttachments().clear();
+        entity.getDescriptionParagraphs().clear();
+        return entity;
     }
 
+    private static boolean hasEvolvedSaveSections(ApplicationSavePayload payload) {
+        if (payload.getHeader() != null || payload.getDescription() != null || payload.getDisputedOrder() != null) {
+            return true;
+        }
+        if (payload.getApplicants() != null && !payload.getApplicants().isEmpty()) {
+            return true;
+        }
+        if (payload.getRespondents() != null && !payload.getRespondents().isEmpty()) {
+            return true;
+        }
+        if (payload.getDisputedLands() != null && !payload.getDisputedLands().isEmpty()) {
+            return true;
+        }
+        if (payload.getAttachments() != null && !payload.getAttachments().isEmpty()) {
+            return true;
+        }
+        if (payload.getVakalatnamaAssignments() != null && !payload.getVakalatnamaAssignments().isEmpty()) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Resolves an existing filing row or starts a new aggregate. Stale {@code applicationId} values
+     * (e.g. after DB truncate) fall back to {@code clientApplicationRef}, then a new draft.
+     */
     private FilingApplication locateOrCreate(Long applicationId, UUID clientRef) {
         if (applicationId != null) {
-            return filingApplicationRepository.findById(applicationId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid applicationId."));
+            Optional<FilingApplication> byId = filingApplicationRepository.findById(applicationId);
+            if (byId.isPresent()) {
+                return byId.get();
+            }
         }
         if (clientRef != null) {
             Optional<FilingApplication> byRef = filingApplicationRepository.findByClientApplicationRef(clientRef);
@@ -799,22 +959,89 @@ public class FilingApplicationService {
     }
 
     private void applyFormHeader(FilingApplication entity, ApplicationFormNestedPayload form) {
-        Subject subject = resolveSubject(form.getSubjectId());
-        entity.setSubject(subject);
-        entity.setApplicationDescription(trimToNull(form.getApplicationDescription()));
+        applyFilingHeader(entity, toFilingHeaderPayload(form));
+    }
 
-        entity.setDistrict(resolveDistrict(form.getDistrictId()));
-        entity.setSubdistrict(resolveSubdistrict(form.getSubdistrictId()));
-        entity.setTaluka(resolveTaluka(form.getTalukaId()));
-        Office office = resolveOffice(form.getOfficeId(), form.getOfficeCode());
+    private void applyFilingHeader(FilingApplication entity, ApplicationFilingHeaderPayload header) {
+        if (header == null) {
+            return;
+        }
+        Subject subject = resolveSubject(header.getSubjectId());
+        entity.setSubject(subject);
+        String description = trimToNull(header.getApplicationDescription());
+        if (description != null) {
+            entity.setApplicationDescription(description);
+        }
+
+        entity.setDistrict(resolveDistrict(header.getDistrictId()));
+        entity.setSubdistrict(resolveSubdistrict(header.getSubdistrictId()));
+        entity.setTaluka(resolveTaluka(header.getTalukaId()));
+        Office office = resolveOffice(header.getOfficeId(), header.getOfficeCode());
         entity.setOffice(office);
-        Act act = resolveAct(form.getActId(), form.getActCode());
+        Act act = resolveAct(header.getActId(), header.getActCode());
         entity.setAct(act);
 
-        normalizeSection(form, entity, act);
+        normalizeSection(header, entity, act);
 
-        entity.setMutationYear(form.getMutationYear());
-        entity.setMutationTypeFilter(trimToNull(form.getMutationTypeFilter()));
+        entity.setMutationYear(header.getMutationYear());
+        entity.setMutationTypeFilter(trimToNull(header.getMutationTypeFilter()));
+    }
+
+    private static ApplicationFilingHeaderPayload toFilingHeaderPayload(ApplicationFormNestedPayload form) {
+        ApplicationFilingHeaderPayload header = new ApplicationFilingHeaderPayload();
+        header.setSubjectId(form.getSubjectId());
+        header.setApplicationDescription(form.getApplicationDescription());
+        header.setDistrictId(form.getDistrictId());
+        header.setSubdistrictId(form.getSubdistrictId());
+        header.setTalukaId(form.getTalukaId());
+        header.setOfficeId(form.getOfficeId());
+        header.setOfficeCode(form.getOfficeCode());
+        header.setActId(form.getActId());
+        header.setActCode(form.getActCode());
+        header.setSectionId(form.getSectionId());
+        header.setSectionCode(form.getSectionCode());
+        header.setSectionCustomText(form.getSectionCustomText());
+        header.setMutationYear(form.getMutationYear());
+        header.setMutationTypeFilter(form.getMutationTypeFilter());
+        return header;
+    }
+
+    private void applyDescription(FilingApplication entity, ApplicationDescriptionPayload description) {
+        if (description == null) {
+            return;
+        }
+        entity.setAffidavitText(trimToNull(description.getAffidavitText()));
+        entity.setPrayerText(trimToNull(description.getPrayerText()));
+
+        List<String> paragraphs = description.getParagraphs();
+        if (paragraphs == null || paragraphs.isEmpty()) {
+            return;
+        }
+        int paraNo = 1;
+        StringBuilder joined = new StringBuilder();
+        for (String raw : paragraphs) {
+            String text = trimToNull(raw);
+            if (text == null) {
+                continue;
+            }
+            ApplicationDescriptionParagraph row = new ApplicationDescriptionParagraph();
+            row.setApplication(entity);
+            row.setParaNo(paraNo++);
+            row.setText(text);
+            entity.getDescriptionParagraphs().add(row);
+            if (joined.length() > 0) {
+                joined.append("\n\n");
+            }
+            joined.append(text);
+        }
+        if (joined.length() > 0) {
+            entity.setApplicationDescription(joined.toString());
+        }
+    }
+
+    private void storeFormSnapshot(FilingApplication entity, ApplicationSavePayload payload) {
+        Object snapshot = payload.getFormSnapshot() != null ? payload.getFormSnapshot() : payload;
+        entity.setFormSnapshotJson(filingJsonCodec.toJson(snapshot));
     }
 
     private Subject resolveSubject(Long id) {
@@ -871,7 +1098,7 @@ public class FilingApplicationService {
         return null;
     }
 
-    private void normalizeSection(ApplicationFormNestedPayload form, FilingApplication entity, Act resolvedAct) {
+    private void normalizeSection(ApplicationFilingHeaderPayload form, FilingApplication entity, Act resolvedAct) {
         String sectionCustomText = trimToNull(form.getSectionCustomText());
         if (hasText(sectionCustomText)) {
             entity.setSection(null);
@@ -926,10 +1153,13 @@ public class FilingApplicationService {
         }
         boolean hasManual = hasText(trimToNull(disputed.getManualInwardNumber()));
         boolean hasInward = hasText(trimToNull(disputed.getInwardNumber()))
+                || hasText(trimToNull(disputed.getResolvedInwardNumber()))
                 || ((disputed.getSearchMode() != null && disputed.getSearchMode().name().equalsIgnoreCase("INWARD_NUMBER"))
                     && hasText(trimToNull(disputed.getSearchValue())));
         boolean hasSearchSignal = disputed.getMutationSearched() != null || disputed.getMutationFound() != null
-                || disputed.getSearchMode() != null || hasText(trimToNull(disputed.getSearchValue()));
+                || disputed.getSearchMode() != null || hasText(trimToNull(disputed.getSearchCriteriaCode()))
+                || hasText(trimToNull(disputed.getSearchValue()))
+                || hasText(trimToNull(disputed.getCriteriaValuesJson()));
         if (!(hasManual || hasInward || hasSearchSignal)) {
             throw new IllegalArgumentException("Disputed mutation / order details incomplete for submission.");
         }
@@ -1077,8 +1307,36 @@ public class FilingApplicationService {
         ord.setApplication(app);
         app.setDisputedOrder(ord);
 
-        ord.setSearchMode(parseEnumQuiet(DisputedOrderSearchMode.class, p.getSearchMode()));
-        ord.setSearchValue(trimToNull(p.getSearchValue()));
+        ord.setLandChannel(trimToNull(p.getLandChannel()));
+        ord.setSearchCriteriaCode(trimToNull(p.getSearchCriteriaCode()));
+        ord.setSearchDisplayText(trimToNull(p.getSearchDisplayText()));
+        ord.setResolvedInwardNumber(trimToNull(p.getResolvedInwardNumber()));
+        if (p.getLocation() != null) {
+            ord.setLocationJson(filingJsonCodec.toJson(p.getLocation()));
+        }
+        if (p.getCriteriaValues() != null && !p.getCriteriaValues().isEmpty()) {
+            ord.setCriteriaValuesJson(filingJsonCodec.toJson(p.getCriteriaValues()));
+        }
+        if (p.getMutationSnapshot() != null) {
+            ord.setMutationSnapshotJson(filingJsonCodec.toJson(p.getMutationSnapshot()));
+        }
+        if (p.getExternalRefs() != null && !p.getExternalRefs().isEmpty()) {
+            ord.setExternalRefsJson(filingJsonCodec.toJson(p.getExternalRefs()));
+        }
+
+        DisputedOrderSearchMode searchMode = resolveSearchMode(p);
+        ord.setSearchMode(searchMode);
+        String searchValue = trimToNull(p.getSearchValue());
+        if (searchValue == null && p.getCriteriaValues() != null) {
+            Object inward = p.getCriteriaValues().get("inwardNumber");
+            if (inward == null) {
+                inward = p.getCriteriaValues().get("inwardNo");
+            }
+            if (inward != null) {
+                searchValue = String.valueOf(inward);
+            }
+        }
+        ord.setSearchValue(searchValue);
         ord.setMutationFound(p.getMutationFound());
         ord.setMutationSearched(p.getMutationSearched());
 
@@ -1102,20 +1360,42 @@ public class FilingApplicationService {
         ord.setManualVillage(trimToNull(p.getManualVillage()));
         ord.setManualStatus(trimToNull(p.getManualStatus()));
 
-        Notice9ResolvedPayload n = p.getNotice9Resolved();
+        Notice9ResolvedPayload n = p.getNotice9();
         if (n != null) {
             ord.setNotice9Available(n.getAvailable());
             ord.setNotice9SourceKind(parseEnumQuiet(Notice9SourceKind.class, n.getSourceKind()));
-            // Notice-9 URL/data is intentionally not persisted to avoid oversized varchar payloads.
             ord.setNotice9Url(null);
             ord.setNotice9PreviewKind(trimToNull(n.getPreviewKind()));
+            ord.setNotice9Json(filingJsonCodec.toJson(n));
         }
+
+        String resolvedInward = trimToNull(p.getResolvedInwardNumber());
+        if (resolvedInward != null && !hasText(trimToNull(ord.getInwardNumber()))) {
+            ord.setInwardNumber(resolvedInward);
+        }
+    }
+
+    private static DisputedOrderSearchMode resolveSearchMode(ApplicationDisputedOrderPayload p) {
+        DisputedOrderSearchMode mode = parseEnumQuiet(DisputedOrderSearchMode.class, p.getSearchMode());
+        if (mode != null) {
+            return mode;
+        }
+        return parseEnumQuiet(DisputedOrderSearchMode.class, p.getSearchCriteriaCode());
     }
 
     /**
      * @return true when the whole disputed-order block should be omitted
      */
     private static boolean isBlankDisputedPayload(ApplicationDisputedOrderPayload p) {
+        if (trimToNull(p.getLandChannel()) != null || trimToNull(p.getSearchCriteriaCode()) != null
+                || trimToNull(p.getSearchDisplayText()) != null || trimToNull(p.getResolvedInwardNumber()) != null) {
+            return false;
+        }
+        if (p.getLocation() != null || (p.getCriteriaValues() != null && !p.getCriteriaValues().isEmpty())
+                || p.getMutationSnapshot() != null
+                || (p.getExternalRefs() != null && !p.getExternalRefs().isEmpty())) {
+            return false;
+        }
         if (trimToNull(p.getSearchMode()) != null || trimToNull(p.getSearchValue()) != null) {
             return false;
         }
@@ -1137,9 +1417,9 @@ public class FilingApplicationService {
                 || trimToNull(p.getManualVillage()) != null || trimToNull(p.getManualStatus()) != null) {
             return false;
         }
-        if (p.getNotice9Resolved() != null) {
-            Notice9ResolvedPayload n = p.getNotice9Resolved();
-            if (n.getAvailable() != null || hasText(n.getSourceKind()) || hasText(n.getPreviewKind())) {
+        Notice9ResolvedPayload notice9 = p.getNotice9();
+        if (notice9 != null) {
+            if (notice9.getAvailable() != null || hasText(notice9.getSourceKind()) || hasText(notice9.getPreviewKind())) {
                 return false;
             }
         }
@@ -1283,6 +1563,15 @@ public class FilingApplicationService {
             row.setOfficeName(trimToNull(lp.getOfficeName()));
             row.setVillageCode(trimToNull(lp.getVillageCode()));
             row.setCtsNo(trimToNull(lp.getCtsNo()));
+            row.setParentCtsNo(trimToNull(lp.getParentCtsNo()));
+            row.setSubCtsNo(trimToNull(lp.getSubCtsNo()));
+            row.setTotalArea(trimToNull(lp.getTotalArea()));
+            row.setDisputedArea(trimToNull(lp.getDisputedArea()));
+            row.setAreaUnit(trimToNull(lp.getAreaUnit()));
+            row.setLandHoldersText(trimToNull(lp.getLandHoldersText()));
+            if (lp.getLandDetail() != null && !lp.getLandDetail().isEmpty()) {
+                row.setLandDetailJson(filingJsonCodec.toJson(lp.getLandDetail()));
+            }
 
             app.getDisputedLands().add(row);
         }
@@ -1328,7 +1617,14 @@ public class FilingApplicationService {
         for (ApplicationAttachmentPayload ap : list) {
             ApplicationAttachment row = new ApplicationAttachment();
             row.setApplication(app);
-            row.setKind(requiredEnum(ApplicationAttachmentKind.class, ap.getKind(), "attachment kind"));
+            if (ap.getDocumentTypeId() != null) {
+                DocumentType documentType = documentTypeRepository.findById(ap.getDocumentTypeId())
+                        .orElseThrow(() -> new IllegalArgumentException("Invalid attachment documentTypeId: " + ap.getDocumentTypeId()));
+                row.setDocumentType(documentType);
+                row.setKind(ApplicationAttachmentKind.OTHER);
+            } else {
+                row.setKind(requiredEnum(ApplicationAttachmentKind.class, ap.getKind(), "attachment kind"));
+            }
             row.setStorageKey(requiredText(ap.getStorageKey(), "storageKey"));
             row.setFileName(requiredText(ap.getFileName(), "fileName"));
             row.setMimeType(trimToNull(ap.getMimeType()));
@@ -1557,7 +1853,7 @@ public class FilingApplicationService {
         return null;
     }
 
-    private static OfficerApplicationDetailResponse toOfficerApplicationDetailResponse(
+    private OfficerApplicationDetailResponse toOfficerApplicationDetailResponse(
             FilingApplication app,
             Long caseId,
             String caseNo,
@@ -1601,7 +1897,25 @@ public class FilingApplicationService {
         out.setRespondents(toRespondentPayloads(app.getRespondents()));
         out.setDisputedLands(toDisputedLandPayloads(app.getDisputedLands()));
         out.setAttachments(toAttachmentPayloads(app.getAttachments()));
+        out.setDescription(toDescriptionPayload(app));
         return out;
+    }
+
+    private ApplicationDescriptionPayload toDescriptionPayload(FilingApplication app) {
+        ApplicationDescriptionPayload description = new ApplicationDescriptionPayload();
+        description.setAffidavitText(app.getAffidavitText());
+        description.setPrayerText(app.getPrayerText());
+        List<String> paragraphs = new ArrayList<>();
+        if (app.getDescriptionParagraphs() != null) {
+            app.getDescriptionParagraphs().stream()
+                    .sorted(Comparator.comparingInt(p -> p.getParaNo() != null ? p.getParaNo() : 0))
+                    .forEach(p -> paragraphs.add(p.getText()));
+        }
+        if (paragraphs.isEmpty() && hasText(app.getApplicationDescription())) {
+            paragraphs.add(app.getApplicationDescription());
+        }
+        description.setParagraphs(paragraphs);
+        return description;
     }
 
     private static ApplicationFormNestedPayload toApplicationFormPayload(FilingApplication app) {
@@ -1625,9 +1939,20 @@ public class FilingApplicationService {
         return form;
     }
 
-    private static ApplicationDisputedOrderPayload toDisputedOrderPayload(ApplicationDisputedOrder ord) {
+    private ApplicationDisputedOrderPayload toDisputedOrderPayload(ApplicationDisputedOrder ord) {
         ApplicationDisputedOrderPayload dto = new ApplicationDisputedOrderPayload();
+        dto.setLandChannel(ord.getLandChannel());
+        dto.setSearchCriteriaCode(ord.getSearchCriteriaCode());
+        dto.setSearchDisplayText(ord.getSearchDisplayText());
+        dto.setResolvedInwardNumber(ord.getResolvedInwardNumber());
+        dto.setLocation(filingJsonCodec.readLocation(ord.getLocationJson()));
+        dto.setCriteriaValues(filingJsonCodec.readMap(ord.getCriteriaValuesJson()));
+        dto.setMutationSnapshot(filingJsonCodec.readObject(ord.getMutationSnapshotJson()));
+        dto.setExternalRefs(filingJsonCodec.readMap(ord.getExternalRefsJson()));
         dto.setSearchMode(ord.getSearchMode() != null ? ord.getSearchMode().name() : null);
+        if (dto.getSearchMode() == null && hasText(ord.getSearchCriteriaCode())) {
+            dto.setSearchMode(ord.getSearchCriteriaCode());
+        }
         dto.setSearchValue(ord.getSearchValue());
         dto.setMutationFound(ord.getMutationFound());
         dto.setMutationSearched(ord.getMutationSearched());
@@ -1649,11 +1974,15 @@ public class FilingApplicationService {
         md.setNotice9Url(null);
         dto.setMutationDetails(md);
 
-        Notice9ResolvedPayload n = new Notice9ResolvedPayload();
-        n.setAvailable(ord.getNotice9Available());
-        n.setSourceKind(ord.getNotice9SourceKind() != null ? ord.getNotice9SourceKind().name() : null);
-        n.setPreviewKind(ord.getNotice9PreviewKind());
-        n.setUrl(null);
+        Notice9ResolvedPayload n = filingJsonCodec.readNotice9(ord.getNotice9Json());
+        if (n == null) {
+            n = new Notice9ResolvedPayload();
+            n.setAvailable(ord.getNotice9Available());
+            n.setSourceKind(ord.getNotice9SourceKind() != null ? ord.getNotice9SourceKind().name() : null);
+            n.setPreviewKind(ord.getNotice9PreviewKind());
+            n.setUrl(null);
+        }
+        dto.setNotice9(n);
         dto.setNotice9Resolved(n);
         return dto;
     }
@@ -1772,7 +2101,7 @@ public class FilingApplicationService {
         }
     }
 
-    private static List<DisputedLandPayload> toDisputedLandPayloads(List<ApplicationDisputedLand> rows) {
+    private List<DisputedLandPayload> toDisputedLandPayloads(List<ApplicationDisputedLand> rows) {
         List<DisputedLandPayload> out = new ArrayList<>();
         if (rows == null) {
             return out;
@@ -1801,6 +2130,13 @@ public class FilingApplicationService {
             dto.setOfficeName(row.getOfficeName());
             dto.setVillageCode(row.getVillageCode());
             dto.setCtsNo(row.getCtsNo());
+            dto.setParentCtsNo(row.getParentCtsNo());
+            dto.setSubCtsNo(row.getSubCtsNo());
+            dto.setTotalArea(row.getTotalArea());
+            dto.setDisputedArea(row.getDisputedArea());
+            dto.setAreaUnit(row.getAreaUnit());
+            dto.setLandHoldersText(row.getLandHoldersText());
+            dto.setLandDetail(filingJsonCodec.readMap(row.getLandDetailJson()));
             out.add(dto);
         }
         return out;
@@ -1814,6 +2150,7 @@ public class FilingApplicationService {
         for (ApplicationAttachment row : rows) {
             ApplicationAttachmentPayload dto = new ApplicationAttachmentPayload();
             dto.setKind(row.getKind() != null ? row.getKind().name() : null);
+            dto.setDocumentTypeId(row.getDocumentType() != null ? row.getDocumentType().getId() : null);
             dto.setStorageKey(row.getStorageKey());
             dto.setFileName(row.getFileName());
             dto.setMimeType(row.getMimeType());
@@ -1908,6 +2245,20 @@ public class FilingApplicationService {
                 .orElseThrow(() -> new IllegalArgumentException("Application not found."));
         assertPartyOwnership(app, login);
         return app;
+    }
+
+    private static boolean isOfficerPrincipal(Principal principal) {
+        Objects.requireNonNull(principal);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if ("ROLE_OFFICER".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private FilingApplication resolveOfficerHistoryScopedApplication(Long applicationId, Principal principal) {
@@ -2250,6 +2601,25 @@ public class FilingApplicationService {
             String caseNo,
             boolean officerView
     ) {
+        CaseWorkflowDefinition def = caseWorkflowConfigService.resolveForCategory(app.getCaseCategory());
+        if (def.getJudgment().isAuditTrailRequired()) {
+            CaseJudgmentWorkflow judgmentRow = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null);
+            for (var hist : judgmentWorkflowHistoryRepository.findByCaseRegistryIdOrderByCreatedAtAscIdAsc(caseId)) {
+                ApplicationHistoryAction action = mapJudgmentHistoryAction(hist.getActionCode());
+                entries.add(judgmentEntry(
+                        action,
+                        hist.getCreatedAt(),
+                        judgmentRow,
+                        app,
+                        caseId,
+                        caseNo,
+                        hist.getActorLoginId(),
+                        hist.getRemarks()
+                ));
+            }
+            return;
+        }
+
         Optional<CaseJudgmentWorkflow> judgmentOpt = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId);
         if (judgmentOpt.isEmpty()) {
             return;
@@ -2260,7 +2630,18 @@ public class FilingApplicationService {
             return;
         }
         if (officerView) {
-            if (status == CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
+            if (status == CaseJudgmentWorkflowStatus.PO_DRAFT) {
+                entries.add(judgmentEntry(
+                        ApplicationHistoryAction.JUDGMENT_PO_DRAFT_SAVED,
+                        judgment.getUpdatedAt(),
+                        judgment,
+                        app,
+                        caseId,
+                        caseNo,
+                        judgment.getDraftedByLoginId(),
+                        null
+                ));
+            } else if (status == CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
                 entries.add(judgmentEntry(
                         ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED,
                         judgment.getUpdatedAt(),
@@ -2268,17 +2649,19 @@ public class FilingApplicationService {
                         app,
                         caseId,
                         caseNo,
-                        judgment.getDraftedByLoginId()
+                        judgment.getDraftedByLoginId(),
+                        null
                 ));
             } else if (status == CaseJudgmentWorkflowStatus.PO_SCRUTINY) {
                 entries.add(judgmentEntry(
-                        ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED,
+                        ApplicationHistoryAction.JUDGMENT_PO_DRAFT_SAVED,
                         judgment.getCreatedAt(),
                         judgment,
                         app,
                         caseId,
                         caseNo,
-                        judgment.getDraftedByLoginId()
+                        judgment.getDraftedByLoginId(),
+                        null
                 ));
                 entries.add(judgmentEntry(
                         ApplicationHistoryAction.JUDGMENT_SUBMITTED_TO_PO,
@@ -2287,7 +2670,8 @@ public class FilingApplicationService {
                         app,
                         caseId,
                         caseNo,
-                        judgment.getDraftedByLoginId()
+                        judgment.getDraftedByLoginId(),
+                        null
                 ));
             } else if (status == CaseJudgmentWorkflowStatus.PO_FINALIZED) {
                 entries.add(judgmentEntry(
@@ -2297,7 +2681,8 @@ public class FilingApplicationService {
                         app,
                         caseId,
                         caseNo,
-                        judgment.getFinalizedByLoginId()
+                        judgment.getFinalizedByLoginId(),
+                        null
                 ));
             } else if (status == CaseJudgmentWorkflowStatus.PUBLISHED) {
                 entries.add(judgmentEntry(
@@ -2307,7 +2692,8 @@ public class FilingApplicationService {
                         app,
                         caseId,
                         caseNo,
-                        judgment.getPublishedByLoginId()
+                        judgment.getPublishedByLoginId(),
+                        null
                 ));
             }
         } else if (status == CaseJudgmentWorkflowStatus.PUBLISHED) {
@@ -2318,7 +2704,8 @@ public class FilingApplicationService {
                     app,
                     caseId,
                     caseNo,
-                    judgment.getPublishedByLoginId()
+                    judgment.getPublishedByLoginId(),
+                    null
             ));
         }
     }
@@ -2330,31 +2717,65 @@ public class FilingApplicationService {
             FilingApplication app,
             Long caseId,
             String caseNo,
-            String actorLoginId
+            String actorLoginId,
+            String userRemarks
     ) {
-        String summary = trimToNull(judgment.getPublishedSummary());
-        if (summary == null) {
-            summary = trimToNull(judgment.getFinalSummary());
+        String remarks = trimToNull(userRemarks);
+        if (remarks == null && judgment != null) {
+            String summary = trimToNull(judgment.getPublishedSummary());
+            if (summary == null) {
+                summary = trimToNull(judgment.getFinalSummary());
+            }
+            if (summary == null) {
+                summary = trimToNull(judgment.getDraftSummary());
+            }
+            remarks = summary != null && summary.length() > 200 ? summary.substring(0, 200) + "…" : summary;
         }
-        if (summary == null) {
-            summary = trimToNull(judgment.getDraftSummary());
-        }
-        String remarks = summary != null && summary.length() > 200 ? summary.substring(0, 200) + "…" : summary;
+        String role = switch (action) {
+            case JUDGMENT_DRAFT_SAVED, JUDGMENT_SENT_TO_CLERK -> "CLERK";
+            case JUDGMENT_PO_DRAFT_SAVED -> "PRESIDING_OFFICER";
+            default -> "PRESIDING_OFFICER";
+        };
+        Long refId = judgment != null ? judgment.getId() : null;
         return proceedingEntry(
                 action,
                 at,
                 remarks,
-                action == ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED ? "CLERK" : "PRESIDING_OFFICER",
+                role,
                 actorLoginId,
                 app,
                 caseId,
                 caseNo,
                 "JUDGMENT",
-                judgment.getId(),
+                refId,
                 null,
                 null,
                 null
         );
+    }
+
+    private static ApplicationHistoryAction mapJudgmentHistoryAction(String actionCode) {
+        if (actionCode == null) {
+            return ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED;
+        }
+        return switch (actionCode) {
+            case "PO_DRAFT_JUDGMENT", "UPDATE_PO_JUDGMENT" -> ApplicationHistoryAction.JUDGMENT_PO_DRAFT_SAVED;
+            case "SEND_JUDGMENT_TO_CLERK" -> ApplicationHistoryAction.JUDGMENT_SENT_TO_CLERK;
+            case "CLERK_UPDATE_JUDGMENT" -> ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED;
+            case "SUBMIT_JUDGMENT_TO_PO" -> ApplicationHistoryAction.JUDGMENT_SUBMITTED_TO_PO;
+            case "FINALIZE_JUDGMENT" -> ApplicationHistoryAction.JUDGMENT_FINALIZED;
+            case "PUBLISH_JUDGMENT" -> ApplicationHistoryAction.JUDGMENT_PUBLISHED;
+            case "REVERT_JUDGMENT_TO_CLERK" -> ApplicationHistoryAction.JUDGMENT_SENT_TO_CLERK;
+            default -> ApplicationHistoryAction.JUDGMENT_DRAFT_SAVED;
+        };
+    }
+
+    private void requireFilingAction(FilingApplication app, EmployeePosting posting, WorkflowAction action) {
+        java.util.Set<WorkflowAction> allowed = new java.util.LinkedHashSet<>();
+        for (String code : workflowPolicyService.filingAllowedActions(app, posting)) {
+            allowed.add(WorkflowAction.valueOf(code));
+        }
+        workflowPolicyService.requireAction(action, allowed);
     }
 
     private ApplicationHistoryResponse proceedingEntry(
@@ -2501,7 +2922,9 @@ public class FilingApplicationService {
             case ORDER_SHEET_SUBMITTED_TO_PO -> "Order sheet submitted to PO";
             case ORDER_SHEET_FINALIZED -> "Order sheet finalized";
             case ORDER_SHEET_SIGNED -> "Order sheet signed for hearing";
-            case JUDGMENT_DRAFT_SAVED -> "Judgment draft saved";
+            case JUDGMENT_PO_DRAFT_SAVED -> "Judgment draft saved by PO";
+            case JUDGMENT_SENT_TO_CLERK -> "Judgment sent to clerk for editing";
+            case JUDGMENT_DRAFT_SAVED -> "Judgment draft saved by clerk";
             case JUDGMENT_SUBMITTED_TO_PO -> "Judgment submitted to PO";
             case JUDGMENT_FINALIZED -> "Judgment finalized";
             case JUDGMENT_PUBLISHED -> "Judgment published";

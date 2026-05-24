@@ -1,5 +1,6 @@
 package com.maharashtra.rccms.dto.filing;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.util.List;
@@ -11,12 +12,17 @@ import java.util.List;
 @SuppressWarnings("null")
 public class ApplicationSavePayload {
 
+    @JsonAlias({"id", "application_id"})
     private Long applicationId;
+    @JsonAlias({"client_application_ref", "clientRef"})
     private String clientApplicationRef;
     private Long caseCategoryId;
     private String status;
 
     private ApplicationFormNestedPayload form;
+
+    /** Evolved save shape: step 3 act/section/office fields */
+    private ApplicationFilingHeaderPayload header;
 
     private ApplicationDisputedOrderPayload disputedOrder;
 
@@ -26,9 +32,14 @@ public class ApplicationSavePayload {
     private MutationDetailsPayload mutationDetails;
     private Notice9ResolvedPayload notice9Resolved;
 
+    private List<ApplicantRowPayload> applicants;
+    private List<RespondentRowPayload> respondents;
     private List<VakalatnamaGroupPayload> vakalatnamaAssignments;
     private List<DisputedLandPayload> disputedLands;
+    private ApplicationDescriptionPayload description;
     private List<ApplicationAttachmentPayload> attachments;
+    /** Optional audit copy of full request (also persisted server-side). */
+    private Object formSnapshot;
 
     public Long getApplicationId() {
         return applicationId;
@@ -68,6 +79,14 @@ public class ApplicationSavePayload {
 
     public void setForm(ApplicationFormNestedPayload form) {
         this.form = form;
+    }
+
+    public ApplicationFilingHeaderPayload getHeader() {
+        return header;
+    }
+
+    public void setHeader(ApplicationFilingHeaderPayload header) {
+        this.header = header;
     }
 
     public ApplicationDisputedOrderPayload getDisputedOrder() {
@@ -116,6 +135,38 @@ public class ApplicationSavePayload {
 
     public void setVakalatnamaAssignments(List<VakalatnamaGroupPayload> vakalatnamaAssignments) {
         this.vakalatnamaAssignments = vakalatnamaAssignments;
+    }
+
+    public List<ApplicantRowPayload> getApplicants() {
+        return applicants;
+    }
+
+    public void setApplicants(List<ApplicantRowPayload> applicants) {
+        this.applicants = applicants;
+    }
+
+    public List<RespondentRowPayload> getRespondents() {
+        return respondents;
+    }
+
+    public void setRespondents(List<RespondentRowPayload> respondents) {
+        this.respondents = respondents;
+    }
+
+    public ApplicationDescriptionPayload getDescription() {
+        return description;
+    }
+
+    public void setDescription(ApplicationDescriptionPayload description) {
+        this.description = description;
+    }
+
+    public Object getFormSnapshot() {
+        return formSnapshot;
+    }
+
+    public void setFormSnapshot(Object formSnapshot) {
+        this.formSnapshot = formSnapshot;
     }
 
     public List<DisputedLandPayload> getDisputedLands() {

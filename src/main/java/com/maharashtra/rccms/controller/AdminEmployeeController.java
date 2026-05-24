@@ -109,7 +109,35 @@ public class AdminEmployeeController {
         return ResponseEntity.ok(items);
     }
 
+    /**
+     * Creates or repairs {@code officer_registration} for an existing employee and sets login password
+     * to the default ({@value #DEFAULT_OFFICER_PASSWORD}). Use when employee row exists but officer login fails.
+     */
+    @PostMapping("/{id}/sync-officer-login")
+    @Transactional
+    public ResponseEntity<?> syncOfficerLogin(@PathVariable("id") Long id) {
+        try {
+            Employee employee = employeeRepository.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid employee id"));
+            String officerLoginId = buildOfficerLoginId(employee.getEmail(), employee.getEmployeeCode());
+
+            OfficerRegistration registration = syncOfficerRegistrationForEmployee(employee);
+            registration.setPasswordHash(passwordEncoder.encode(DEFAULT_OFFICER_PASSWORD));
+            officerRegistrationRepository.save(registration);
+
+            return ResponseEntity.ok(Map.of(
+                    "employeeId", employee.getId(),
+                    "userId", officerLoginId,
+                    "defaultPassword", DEFAULT_OFFICER_PASSWORD,
+                    "message", "Officer login synced. Use userId and defaultPassword to sign in."
+            ));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
     @PutMapping("/{id}")
+    @Transactional
     public ResponseEntity<?> updateEmployee(@PathVariable("id") Long id, @RequestBody EmployeeUpdateRequest request) {
         try {
             Employee employee = employeeRepository.findById(id).orElse(null);
@@ -118,6 +146,7 @@ public class AdminEmployeeController {
             applyEmployeeFields(employee, request.getEmployeeCode(), request.getFullName(), request.getFullNameLocal(),
                     request.getMobile(), request.getEmail(), isActive);
             employee = employeeRepository.save(employee);
+            syncOfficerRegistrationForEmployee(employee);
             return ResponseEntity.ok(toEmployeeResponse(employee));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -202,6 +231,22 @@ public class AdminEmployeeController {
         }
     }
 
+    private OfficerRegistration syncOfficerRegistrationForEmployee(Employee employee) {
+        String officerLoginId = buildOfficerLoginId(employee.getEmail(), employee.getEmployeeCode());
+        OfficerRegistration registration = officerRegistrationRepository.findByEmail(officerLoginId)
+                .orElseGet(OfficerRegistration::new);
+        registration.setFullName(employee.getFullName());
+        registration.setEmail(officerLoginId);
+        registration.setMobileNumber(trimToFallback(employee.getMobile(), "9999999999"));
+        if (!hasText(registration.getAddress())) {
+            registration.setAddress("Assigned by admin");
+        }
+        if (!hasText(registration.getPasswordHash())) {
+            registration.setPasswordHash(passwordEncoder.encode(DEFAULT_OFFICER_PASSWORD));
+        }
+        return officerRegistrationRepository.save(registration);
+    }
+
     private static void applyEmployeeFields(Employee employee,
                                             String employeeCode,
                                             String fullName,
@@ -246,6 +291,10 @@ public class AdminEmployeeController {
             return fallback;
         }
         return value.trim();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private static EmployeePostingResponse toPostingResponse(EmployeePosting posting) {

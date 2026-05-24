@@ -95,6 +95,33 @@ public class ApplicationDisputedOrder {
     @Column(name = "notice9_preview_kind", length = 16)
     private String notice9PreviewKind;
 
+    @Column(name = "land_channel", length = 32)
+    private String landChannel;
+
+    @Column(name = "search_criteria_code", length = 64)
+    private String searchCriteriaCode;
+
+    @Column(name = "search_display_text", length = 1024)
+    private String searchDisplayText;
+
+    @Column(name = "resolved_inward_number", length = 255)
+    private String resolvedInwardNumber;
+
+    @Column(name = "location_json", columnDefinition = "TEXT")
+    private String locationJson;
+
+    @Column(name = "criteria_values_json", columnDefinition = "TEXT")
+    private String criteriaValuesJson;
+
+    @Column(name = "mutation_snapshot_json", columnDefinition = "TEXT")
+    private String mutationSnapshotJson;
+
+    @Column(name = "external_refs_json", columnDefinition = "TEXT")
+    private String externalRefsJson;
+
+    @Column(name = "notice9_json", columnDefinition = "TEXT")
+    private String notice9Json;
+
     public Long getId() {
         return id;
     }
@@ -281,5 +308,77 @@ public class ApplicationDisputedOrder {
 
     public void setNotice9PreviewKind(String notice9PreviewKind) {
         this.notice9PreviewKind = notice9PreviewKind;
+    }
+
+    public String getLandChannel() {
+        return landChannel;
+    }
+
+    public void setLandChannel(String landChannel) {
+        this.landChannel = landChannel;
+    }
+
+    public String getSearchCriteriaCode() {
+        return searchCriteriaCode;
+    }
+
+    public void setSearchCriteriaCode(String searchCriteriaCode) {
+        this.searchCriteriaCode = searchCriteriaCode;
+    }
+
+    public String getSearchDisplayText() {
+        return searchDisplayText;
+    }
+
+    public void setSearchDisplayText(String searchDisplayText) {
+        this.searchDisplayText = searchDisplayText;
+    }
+
+    public String getResolvedInwardNumber() {
+        return resolvedInwardNumber;
+    }
+
+    public void setResolvedInwardNumber(String resolvedInwardNumber) {
+        this.resolvedInwardNumber = resolvedInwardNumber;
+    }
+
+    public String getLocationJson() {
+        return locationJson;
+    }
+
+    public void setLocationJson(String locationJson) {
+        this.locationJson = locationJson;
+    }
+
+    public String getCriteriaValuesJson() {
+        return criteriaValuesJson;
+    }
+
+    public void setCriteriaValuesJson(String criteriaValuesJson) {
+        this.criteriaValuesJson = criteriaValuesJson;
+    }
+
+    public String getMutationSnapshotJson() {
+        return mutationSnapshotJson;
+    }
+
+    public void setMutationSnapshotJson(String mutationSnapshotJson) {
+        this.mutationSnapshotJson = mutationSnapshotJson;
+    }
+
+    public String getExternalRefsJson() {
+        return externalRefsJson;
+    }
+
+    public void setExternalRefsJson(String externalRefsJson) {
+        this.externalRefsJson = externalRefsJson;
+    }
+
+    public String getNotice9Json() {
+        return notice9Json;
+    }
+
+    public void setNotice9Json(String notice9Json) {
+        this.notice9Json = notice9Json;
     }
 }

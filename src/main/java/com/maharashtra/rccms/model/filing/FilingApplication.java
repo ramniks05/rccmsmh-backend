@@ -82,6 +82,16 @@ public class FilingApplication {
     @Column(name = "application_description", columnDefinition = "TEXT")
     private String applicationDescription;
 
+    @Column(name = "affidavit_text", columnDefinition = "TEXT")
+    private String affidavitText;
+
+    @Column(name = "prayer_text", columnDefinition = "TEXT")
+    private String prayerText;
+
+    /** Full save POST body for audit / UI re-hydrate; not used for business queries. */
+    @Column(name = "form_snapshot_json", columnDefinition = "TEXT")
+    private String formSnapshotJson;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "district_id")
     private District district;
@@ -171,6 +181,9 @@ public class FilingApplication {
 
     @OneToMany(mappedBy = "application", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ApplicationAttachment> attachments = new ArrayList<>();
+
+    @OneToMany(mappedBy = "application", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ApplicationDescriptionParagraph> descriptionParagraphs = new ArrayList<>();
 
     @PrePersist
     public void prePersist() {
@@ -264,6 +277,34 @@ public class FilingApplication {
 
     public void setApplicationDescription(String applicationDescription) {
         this.applicationDescription = applicationDescription;
+    }
+
+    public String getAffidavitText() {
+        return affidavitText;
+    }
+
+    public void setAffidavitText(String affidavitText) {
+        this.affidavitText = affidavitText;
+    }
+
+    public String getPrayerText() {
+        return prayerText;
+    }
+
+    public void setPrayerText(String prayerText) {
+        this.prayerText = prayerText;
+    }
+
+    public String getFormSnapshotJson() {
+        return formSnapshotJson;
+    }
+
+    public void setFormSnapshotJson(String formSnapshotJson) {
+        this.formSnapshotJson = formSnapshotJson;
+    }
+
+    public List<ApplicationDescriptionParagraph> getDescriptionParagraphs() {
+        return descriptionParagraphs;
     }
 
     public District getDistrict() {

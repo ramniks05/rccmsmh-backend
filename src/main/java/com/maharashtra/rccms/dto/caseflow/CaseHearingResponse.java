@@ -15,6 +15,8 @@ public class CaseHearingResponse {
     private Boolean noticeServed;
     /** True when noticeServed; proceeding/roznama may be started. */
     private Boolean proceedingAllowed;
+    /** True when PO signed roznamma with outcome FINAL for this hearing. */
+    private Boolean finalHearing;
     private String remarks;
     private Instant createdAt;
     private Instant updatedAt;
@@ -89,6 +91,14 @@ public class CaseHearingResponse {
 
     public void setProceedingAllowed(Boolean proceedingAllowed) {
         this.proceedingAllowed = proceedingAllowed;
+    }
+
+    public Boolean getFinalHearing() {
+        return finalHearing;
+    }
+
+    public void setFinalHearing(Boolean finalHearing) {
+        this.finalHearing = finalHearing;
     }
 
     public String getRemarks() {

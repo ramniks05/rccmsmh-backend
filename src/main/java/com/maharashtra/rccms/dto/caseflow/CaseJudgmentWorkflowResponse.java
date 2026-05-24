@@ -12,6 +12,7 @@ public class CaseJudgmentWorkflowResponse {
     private String publishedSummary;
     private Instant publishedAt;
     private Instant updatedAt;
+    private java.util.List<String> allowedActions = new java.util.ArrayList<>();
 
     public Long getCaseId() {
         return caseId;
@@ -83,5 +84,13 @@ public class CaseJudgmentWorkflowResponse {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public java.util.List<String> getAllowedActions() {
+        return allowedActions;
+    }
+
+    public void setAllowedActions(java.util.List<String> allowedActions) {
+        this.allowedActions = allowedActions;
     }
 }

@@ -10,9 +10,10 @@ public class AuthResponse {
     private final Long officeId;
     private final String officeName;
     private final String officeCode;
+    private final String barEnrollmentNumber;
 
     public AuthResponse(String accessToken, String tokenType, String role, String displayName) {
-        this(accessToken, tokenType, role, displayName, null, null, null, null, null);
+        this(accessToken, tokenType, role, displayName, null, null, null, null, null, null);
     }
 
     public AuthResponse(
@@ -26,6 +27,21 @@ public class AuthResponse {
             String officeName,
             String officeCode
     ) {
+        this(accessToken, tokenType, role, displayName, designationId, designationName, officeId, officeName, officeCode, null);
+    }
+
+    public AuthResponse(
+            String accessToken,
+            String tokenType,
+            String role,
+            String displayName,
+            Long designationId,
+            String designationName,
+            Long officeId,
+            String officeName,
+            String officeCode,
+            String barEnrollmentNumber
+    ) {
         this.accessToken = accessToken;
         this.tokenType = tokenType;
         this.role = role;
@@ -35,6 +51,7 @@ public class AuthResponse {
         this.officeId = officeId;
         this.officeName = officeName;
         this.officeCode = officeCode;
+        this.barEnrollmentNumber = barEnrollmentNumber;
     }
 
     public String getAccessToken() {
@@ -71,5 +88,9 @@ public class AuthResponse {
 
     public String getOfficeCode() {
         return officeCode;
+    }
+
+    public String getBarEnrollmentNumber() {
+        return barEnrollmentNumber;
     }
 }

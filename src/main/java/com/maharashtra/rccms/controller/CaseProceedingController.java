@@ -1,29 +1,27 @@
 package com.maharashtra.rccms.controller;
 
 import com.maharashtra.rccms.dto.caseflow.CaseHearingResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseHearingRescheduleRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseHearingScheduleRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseInboxItemResponse;
-import com.maharashtra.rccms.dto.caseflow.CaseJudgmentRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseJudgmentResponse;
-import com.maharashtra.rccms.dto.caseflow.OfficerDashboardResponse;
-import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetHistoryResponse;
-import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetResponse;
-import com.maharashtra.rccms.dto.caseflow.OfficerCauseListItemResponse;
-import com.maharashtra.rccms.dto.caseflow.OfficerRoznamaTableResponse;
-import com.maharashtra.rccms.dto.caseflow.RoznamaHearingContextRequest;
-import com.maharashtra.rccms.dto.caseflow.RoznamaResponse;
-import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetFinalizeRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetSignRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetUpsertRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseNoticeDraftRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseNoticeFinalizeRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
-import com.maharashtra.rccms.dto.caseflow.CaseNoticeSignRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseWorkflowActionResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseJudgmentDraftRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseJudgmentWorkflowResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeServeToPartyRequest;
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeServeToPartyResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetHistoryResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseRoznamaCompleteRequest;
+import com.maharashtra.rccms.dto.caseflow.CaseRoznamaCompleteResponse;
+import com.maharashtra.rccms.dto.caseflow.HearingAttendanceSaveRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseWorkflowRevertRequest;
+import com.maharashtra.rccms.dto.caseflow.OfficerDashboardResponse;
+import com.maharashtra.rccms.dto.caseflow.OfficerNoticeServeQueueItemResponse;
+import com.maharashtra.rccms.dto.caseflow.OfficerRoznamaTableResponse;
+import com.maharashtra.rccms.dto.caseflow.RoznamaResponse;
 import com.maharashtra.rccms.dto.filing.OfficerApplicationDetailResponse;
+import com.maharashtra.rccms.dto.workflow.CaseWorkflowContextResponse;
+import com.maharashtra.rccms.dto.workflow.JudgmentWorkflowHistoryResponse;
+import com.maharashtra.rccms.dto.workflow.NoticeTemplateResolvedResponse;
 import com.maharashtra.rccms.service.CaseProceedingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -73,14 +71,10 @@ public class CaseProceedingController {
         }
     }
 
-    @GetMapping("/cause-list")
-    public ResponseEntity<?> listCauseList(
-            @RequestParam(name = "date", required = false) String date,
-            Principal principal
-    ) {
+    @GetMapping("/notices/pending-serve")
+    public ResponseEntity<?> listPendingNoticeServe(Principal principal) {
         try {
-            LocalDate causeDate = date != null && !date.isBlank() ? LocalDate.parse(date.trim()) : null;
-            List<OfficerCauseListItemResponse> result = caseProceedingService.listCauseList(principal, causeDate);
+            List<OfficerNoticeServeQueueItemResponse> result = caseProceedingService.listPendingNoticeServe(principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -95,6 +89,38 @@ public class CaseProceedingController {
         try {
             LocalDate hearingDate = date != null && !date.isBlank() ? LocalDate.parse(date.trim()) : null;
             OfficerRoznamaTableResponse result = caseProceedingService.listRoznamaTable(principal, hearingDate);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/{caseId}/workflow-context")
+    public ResponseEntity<?> getWorkflowContext(
+            @PathVariable("caseId") Long caseId,
+            @RequestParam(name = "hearingId", required = false) Long hearingId,
+            Principal principal
+    ) {
+        try {
+            CaseWorkflowContextResponse result = caseProceedingService.getWorkflowContext(caseId, hearingId, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/{caseId}/notices/template")
+    public ResponseEntity<?> resolveNoticeTemplate(
+            @PathVariable("caseId") Long caseId,
+            @RequestParam(name = "noticeType", required = false) String noticeType,
+            @RequestParam(name = "hearingId", required = false) Long hearingId,
+            @RequestParam(name = "partyNames", required = false) String partyNames,
+            Principal principal
+    ) {
+        try {
+            NoticeTemplateResolvedResponse result = caseProceedingService.resolveNoticeTemplate(
+                    caseId, noticeType, hearingId, partyNames, principal
+            );
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -121,115 +147,14 @@ public class CaseProceedingController {
         }
     }
 
-    @PostMapping("/{caseId}/notices/draft")
-    public ResponseEntity<?> draftNotice(
+    @PostMapping("/{caseId}/notices/serve")
+    public ResponseEntity<?> serveNoticeToParty(
             @PathVariable("caseId") Long caseId,
-            @RequestBody CaseNoticeDraftRequest body,
+            @RequestBody CaseNoticeServeToPartyRequest body,
             Principal principal
     ) {
         try {
-            CaseWorkflowActionResponse result = caseProceedingService.draftNotice(caseId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/notices")
-    public ResponseEntity<?> draftNoticeCompat(
-            @PathVariable("caseId") Long caseId,
-            @RequestBody CaseNoticeDraftRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseWorkflowActionResponse result = caseProceedingService.draftNotice(caseId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/notices/save-draft")
-    public ResponseEntity<?> draftNoticeSaveDraftAlias(
-            @PathVariable("caseId") Long caseId,
-            @RequestBody CaseNoticeDraftRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseWorkflowActionResponse result = caseProceedingService.draftNotice(caseId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/notices/{noticeId}/submit-to-po")
-    public ResponseEntity<?> submitNoticeToPo(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("noticeId") Long noticeId,
-            Principal principal
-    ) {
-        try {
-            CaseWorkflowActionResponse result = caseProceedingService.submitNoticeToPo(caseId, noticeId, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/notices/{noticeId}/finalize")
-    public ResponseEntity<?> finalizeNotice(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("noticeId") Long noticeId,
-            @RequestBody(required = false) CaseNoticeFinalizeRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseWorkflowActionResponse result = caseProceedingService.finalizeNotice(caseId, noticeId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/notices/{noticeId}/sign")
-    public ResponseEntity<?> signNotice(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("noticeId") Long noticeId,
-            @RequestBody CaseNoticeSignRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseWorkflowActionResponse result = caseProceedingService.signNotice(caseId, noticeId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/notices/{noticeId}/revert-to-clerk")
-    public ResponseEntity<?> revertNoticeToClerk(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("noticeId") Long noticeId,
-            @RequestBody CaseWorkflowRevertRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseWorkflowActionResponse result = caseProceedingService.revertNoticeToClerk(caseId, noticeId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/notices/{noticeId}/serve")
-    public ResponseEntity<?> serveNotice(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("noticeId") Long noticeId,
-            Principal principal
-    ) {
-        try {
-            CaseWorkflowActionResponse result = caseProceedingService.serveNotice(caseId, noticeId, principal);
+            CaseNoticeServeToPartyResponse result = caseProceedingService.serveNoticeToParty(caseId, body, principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -255,6 +180,30 @@ public class CaseProceedingController {
     ) {
         try {
             CaseJudgmentWorkflowResponse result = caseProceedingService.saveJudgmentDraft(caseId, body, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @PostMapping("/{caseId}/judgment/send-to-clerk")
+    public ResponseEntity<?> sendJudgmentToClerk(
+            @PathVariable("caseId") Long caseId,
+            @RequestBody(required = false) CaseWorkflowRevertRequest body,
+            Principal principal
+    ) {
+        try {
+            CaseJudgmentWorkflowResponse result = caseProceedingService.sendJudgmentToClerk(caseId, body, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/{caseId}/judgment/history")
+    public ResponseEntity<?> listJudgmentHistory(@PathVariable("caseId") Long caseId, Principal principal) {
+        try {
+            List<JudgmentWorkflowHistoryResponse> result = caseProceedingService.listJudgmentHistory(caseId, principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -322,6 +271,23 @@ public class CaseProceedingController {
         }
     }
 
+    @PostMapping("/{caseId}/hearings/{hearingId}/reschedule")
+    public ResponseEntity<?> rescheduleHearing(
+            @PathVariable("caseId") Long caseId,
+            @PathVariable("hearingId") Long hearingId,
+            @RequestBody CaseHearingRescheduleRequest body,
+            Principal principal
+    ) {
+        try {
+            CaseHearingResponse result = caseProceedingService.rescheduleHearingAfterAdjourn(
+                    caseId, hearingId, body, principal
+            );
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
     @GetMapping("/{caseId}/hearings")
     public ResponseEntity<?> listCaseHearings(@PathVariable("caseId") Long caseId, Principal principal) {
         try {
@@ -332,97 +298,28 @@ public class CaseProceedingController {
         }
     }
 
-    @GetMapping("/hearings/today")
-    public ResponseEntity<?> listTodayHearings(Principal principal) {
-        try {
-            List<CaseHearingResponse> result = caseProceedingService.listTodayHearings(principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PutMapping("/{caseId}/ordersheet")
-    public ResponseEntity<?> upsertOrderSheet(
+    @GetMapping("/{caseId}/hearings/{hearingId}/attendance")
+    public ResponseEntity<?> getHearingAttendance(
             @PathVariable("caseId") Long caseId,
-            @RequestBody CaseOrderSheetUpsertRequest body,
+            @PathVariable("hearingId") Long hearingId,
             Principal principal
     ) {
         try {
-            CaseOrderSheetResponse result = caseProceedingService.upsertOrderSheet(caseId, body, principal);
-            return ResponseEntity.ok(result);
+            return ResponseEntity.ok(caseProceedingService.getHearingAttendance(caseId, hearingId, principal));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
     }
 
-    @PostMapping("/{caseId}/ordersheet/submit-to-po")
-    public ResponseEntity<?> submitOrderSheetToPo(@PathVariable("caseId") Long caseId, Principal principal) {
-        try {
-            CaseOrderSheetResponse result = caseProceedingService.submitOrderSheetToPo(caseId, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/ordersheet/finalize")
-    public ResponseEntity<?> finalizeOrderSheet(
+    @PutMapping("/{caseId}/hearings/{hearingId}/attendance")
+    public ResponseEntity<?> saveHearingAttendance(
             @PathVariable("caseId") Long caseId,
-            @RequestBody CaseOrderSheetFinalizeRequest body,
+            @PathVariable("hearingId") Long hearingId,
+            @RequestBody HearingAttendanceSaveRequest body,
             Principal principal
     ) {
         try {
-            CaseOrderSheetResponse result = caseProceedingService.finalizeOrderSheet(caseId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/ordersheet/sign")
-    public ResponseEntity<?> signOrderSheet(
-            @PathVariable("caseId") Long caseId,
-            @RequestBody CaseOrderSheetSignRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseOrderSheetResponse result = caseProceedingService.signOrderSheet(caseId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/ordersheet/revert-to-clerk")
-    public ResponseEntity<?> revertOrderSheetToClerk(
-            @PathVariable("caseId") Long caseId,
-            @RequestBody CaseWorkflowRevertRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseOrderSheetResponse result = caseProceedingService.revertOrderSheetToClerk(caseId, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @GetMapping("/{caseId}/ordersheet")
-    public ResponseEntity<?> getOrderSheet(@PathVariable("caseId") Long caseId, Principal principal) {
-        try {
-            CaseOrderSheetResponse result = caseProceedingService.getOrderSheet(caseId, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @GetMapping("/{caseId}/ordersheet/history")
-    public ResponseEntity<?> getOrderSheetHistory(@PathVariable("caseId") Long caseId, Principal principal) {
-        try {
-            List<CaseOrderSheetHistoryResponse> result = caseProceedingService.getOrderSheetHistory(caseId, principal);
-            return ResponseEntity.ok(result);
+            return ResponseEntity.ok(caseProceedingService.saveHearingAttendance(caseId, hearingId, body, principal));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -444,205 +341,18 @@ public class CaseProceedingController {
         }
     }
 
-    @PutMapping("/{caseId}/roznama")
-    @PostMapping("/{caseId}/roznama/draft")
-    public ResponseEntity<?> draftRoznama(
+    @PostMapping("/{caseId}/roznama")
+    public ResponseEntity<?> saveAndSignRoznama(
             @PathVariable("caseId") Long caseId,
-            @RequestBody CaseOrderSheetUpsertRequest body,
+            @RequestBody CaseRoznamaCompleteRequest body,
             Principal principal
     ) {
         try {
-            RoznamaResponse result = caseProceedingService.draftRoznama(caseId, body, principal);
+            CaseRoznamaCompleteResponse result = caseProceedingService.completeRoznama(caseId, body, principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
-    }
-
-    @PostMapping("/{caseId}/roznama/submit-to-po")
-    public ResponseEntity<?> submitRoznamaToPo(
-            @PathVariable("caseId") Long caseId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            @RequestBody(required = false) RoznamaHearingContextRequest body,
-            Principal principal
-    ) {
-        try {
-            RoznamaResponse result = caseProceedingService.submitRoznamaToPo(
-                    caseId,
-                    null,
-                    mergeHearingId(hearingId, body),
-                    mergeHearingDate(hearingDate, body),
-                    principal
-            );
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/roznama/finalize")
-    public ResponseEntity<?> finalizeRoznama(
-            @PathVariable("caseId") Long caseId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            @RequestBody(required = false) CaseOrderSheetFinalizeRequest body,
-            Principal principal
-    ) {
-        try {
-            LocalDate parsedDate = hearingDate != null && !hearingDate.isBlank() ? LocalDate.parse(hearingDate.trim()) : null;
-            RoznamaResponse result = caseProceedingService.finalizeRoznama(
-                    caseId,
-                    null,
-                    hearingId,
-                    parsedDate,
-                    body,
-                    principal
-            );
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/roznama/sign")
-    public ResponseEntity<?> signRoznama(
-            @PathVariable("caseId") Long caseId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            @RequestBody CaseOrderSheetSignRequest body,
-            Principal principal
-    ) {
-        try {
-            LocalDate parsedDate = hearingDate != null && !hearingDate.isBlank() ? LocalDate.parse(hearingDate.trim()) : null;
-            RoznamaResponse result = caseProceedingService.signRoznama(
-                    caseId,
-                    null,
-                    hearingId,
-                    parsedDate,
-                    body,
-                    principal
-            );
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/roznama/revert-to-clerk")
-    public ResponseEntity<?> revertRoznamaToClerk(
-            @PathVariable("caseId") Long caseId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            @RequestBody CaseWorkflowRevertRequest body,
-            Principal principal
-    ) {
-        try {
-            LocalDate parsedDate = hearingDate != null && !hearingDate.isBlank() ? LocalDate.parse(hearingDate.trim()) : null;
-            RoznamaResponse result = caseProceedingService.revertRoznamaToClerk(
-                    caseId,
-                    null,
-                    hearingId,
-                    parsedDate,
-                    body,
-                    principal
-            );
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/roznama/{roznamaId}/finalize")
-    public ResponseEntity<?> finalizeRoznamaById(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("roznamaId") Long roznamaId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            @RequestBody(required = false) CaseOrderSheetFinalizeRequest body,
-            Principal principal
-    ) {
-        try {
-            LocalDate parsedDate = hearingDate != null && !hearingDate.isBlank() ? LocalDate.parse(hearingDate.trim()) : null;
-            RoznamaResponse result = caseProceedingService.finalizeRoznama(
-                    caseId,
-                    roznamaId,
-                    hearingId,
-                    parsedDate,
-                    body,
-                    principal
-            );
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/roznama/{roznamaId}/submit-to-po")
-    public ResponseEntity<?> submitRoznamaToPoById(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("roznamaId") Long roznamaId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            Principal principal
-    ) {
-        try {
-            LocalDate parsedDate = hearingDate != null && !hearingDate.isBlank() ? LocalDate.parse(hearingDate.trim()) : null;
-            RoznamaResponse result = caseProceedingService.submitRoznamaToPo(caseId, roznamaId, hearingId, parsedDate, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/roznama/{roznamaId}/sign")
-    public ResponseEntity<?> signRoznamaById(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("roznamaId") Long roznamaId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            @RequestBody CaseOrderSheetSignRequest body,
-            Principal principal
-    ) {
-        try {
-            LocalDate parsedDate = hearingDate != null && !hearingDate.isBlank() ? LocalDate.parse(hearingDate.trim()) : null;
-            RoznamaResponse result = caseProceedingService.signRoznama(caseId, roznamaId, hearingId, parsedDate, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/roznama/{roznamaId}/revert-to-clerk")
-    public ResponseEntity<?> revertRoznamaToClerkById(
-            @PathVariable("caseId") Long caseId,
-            @PathVariable("roznamaId") Long roznamaId,
-            @RequestParam(name = "hearingId", required = false) Long hearingId,
-            @RequestParam(name = "hearingDate", required = false) String hearingDate,
-            @RequestBody CaseWorkflowRevertRequest body,
-            Principal principal
-    ) {
-        try {
-            LocalDate parsedDate = hearingDate != null && !hearingDate.isBlank() ? LocalDate.parse(hearingDate.trim()) : null;
-            RoznamaResponse result = caseProceedingService.revertRoznamaToClerk(caseId, roznamaId, hearingId, parsedDate, body, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    private static Long mergeHearingId(Long queryHearingId, RoznamaHearingContextRequest body) {
-        if (queryHearingId != null) {
-            return queryHearingId;
-        }
-        return body != null ? body.getHearingId() : null;
-    }
-
-    private static LocalDate mergeHearingDate(String queryHearingDate, RoznamaHearingContextRequest body) {
-        if (queryHearingDate != null && !queryHearingDate.isBlank()) {
-            return LocalDate.parse(queryHearingDate.trim());
-        }
-        return body != null ? body.getHearingDate() : null;
     }
 
     @GetMapping("/{caseId}/roznama/history")
@@ -653,20 +363,6 @@ public class CaseProceedingController {
     ) {
         try {
             List<CaseOrderSheetHistoryResponse> result = caseProceedingService.getRoznamaHistory(caseId, hearingId, principal);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @PostMapping("/{caseId}/judgment")
-    public ResponseEntity<?> passFinalJudgment(
-            @PathVariable("caseId") Long caseId,
-            @RequestBody CaseJudgmentRequest body,
-            Principal principal
-    ) {
-        try {
-            CaseJudgmentResponse result = caseProceedingService.passFinalJudgment(caseId, body, principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));

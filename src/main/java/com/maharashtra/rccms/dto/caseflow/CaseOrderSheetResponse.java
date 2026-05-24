@@ -10,7 +10,10 @@ public class CaseOrderSheetResponse {
     private String draftContent;
     private String finalContent;
     private String status;
+    private String hearingOutcome;
     private Long currentHearingId;
+    private String caseStatus;
+    private String message;
     private String digitalSignatureRef;
     private Instant updatedAt;
     private String updatedByLoginId;
@@ -71,12 +74,36 @@ public class CaseOrderSheetResponse {
         this.status = status;
     }
 
+    public String getHearingOutcome() {
+        return hearingOutcome;
+    }
+
+    public void setHearingOutcome(String hearingOutcome) {
+        this.hearingOutcome = hearingOutcome;
+    }
+
     public Long getCurrentHearingId() {
         return currentHearingId;
     }
 
     public void setCurrentHearingId(Long currentHearingId) {
         this.currentHearingId = currentHearingId;
+    }
+
+    public String getCaseStatus() {
+        return caseStatus;
+    }
+
+    public void setCaseStatus(String caseStatus) {
+        this.caseStatus = caseStatus;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
     }
 
     public String getDigitalSignatureRef() {

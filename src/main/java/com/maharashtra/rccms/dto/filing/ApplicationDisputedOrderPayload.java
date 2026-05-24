@@ -1,7 +1,10 @@
 package com.maharashtra.rccms.dto.filing;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonSetter;
+
+import java.util.Map;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -9,8 +12,19 @@ import java.time.format.DateTimeFormatter;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ApplicationDisputedOrderPayload {
 
+    private String landChannel;
+    private String searchCriteriaCode;
+    private OrderSearchLocationPayload location;
+    private Map<String, Object> criteriaValues;
+    private String resolvedInwardNumber;
+    private Object mutationSnapshot;
+    private Map<String, Object> externalRefs;
+    @JsonAlias({"notice9", "notice9Resolved"})
+    private Notice9ResolvedPayload notice9;
+
     private String searchMode;
     private String searchValue;
+    private String searchDisplayText;
     private Boolean mutationFound;
     /** UI: searchedMutation */
     private Boolean mutationSearched;
@@ -22,6 +36,78 @@ public class ApplicationDisputedOrderPayload {
     private String manualVillage;
     private String manualStatus;
     private Notice9ResolvedPayload notice9Resolved;
+
+    public String getLandChannel() {
+        return landChannel;
+    }
+
+    public void setLandChannel(String landChannel) {
+        this.landChannel = landChannel;
+    }
+
+    public String getSearchCriteriaCode() {
+        return searchCriteriaCode;
+    }
+
+    public void setSearchCriteriaCode(String searchCriteriaCode) {
+        this.searchCriteriaCode = searchCriteriaCode;
+    }
+
+    public OrderSearchLocationPayload getLocation() {
+        return location;
+    }
+
+    public void setLocation(OrderSearchLocationPayload location) {
+        this.location = location;
+    }
+
+    public Map<String, Object> getCriteriaValues() {
+        return criteriaValues;
+    }
+
+    public void setCriteriaValues(Map<String, Object> criteriaValues) {
+        this.criteriaValues = criteriaValues;
+    }
+
+    public String getResolvedInwardNumber() {
+        return resolvedInwardNumber;
+    }
+
+    public void setResolvedInwardNumber(String resolvedInwardNumber) {
+        this.resolvedInwardNumber = resolvedInwardNumber;
+    }
+
+    public Object getMutationSnapshot() {
+        return mutationSnapshot;
+    }
+
+    public void setMutationSnapshot(Object mutationSnapshot) {
+        this.mutationSnapshot = mutationSnapshot;
+    }
+
+    public Map<String, Object> getExternalRefs() {
+        return externalRefs;
+    }
+
+    public void setExternalRefs(Map<String, Object> externalRefs) {
+        this.externalRefs = externalRefs;
+    }
+
+    public Notice9ResolvedPayload getNotice9() {
+        return notice9 != null ? notice9 : notice9Resolved;
+    }
+
+    public void setNotice9(Notice9ResolvedPayload notice9) {
+        this.notice9 = notice9;
+    }
+
+    public String getSearchDisplayText() {
+        return searchDisplayText;
+    }
+
+    public void setSearchDisplayText(String searchDisplayText) {
+        this.searchDisplayText = searchDisplayText;
+    }
 
     public String getSearchMode() {
         return searchMode;

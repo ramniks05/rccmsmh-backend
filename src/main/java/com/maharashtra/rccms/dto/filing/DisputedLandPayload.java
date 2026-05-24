@@ -29,6 +29,13 @@ public class DisputedLandPayload {
     private String officeName;
     private String villageCode;
     private String ctsNo;
+    private String parentCtsNo;
+    private String subCtsNo;
+    private String totalArea;
+    private String disputedArea;
+    private String areaUnit;
+    private String landHoldersText;
+    private java.util.Map<String, Object> landDetail;
 
     public Integer getLineNo() {
         return lineNo;
@@ -204,5 +211,61 @@ public class DisputedLandPayload {
 
     public void setCtsNo(String ctsNo) {
         this.ctsNo = ctsNo;
+    }
+
+    public String getParentCtsNo() {
+        return parentCtsNo;
+    }
+
+    public void setParentCtsNo(String parentCtsNo) {
+        this.parentCtsNo = parentCtsNo;
+    }
+
+    public String getSubCtsNo() {
+        return subCtsNo;
+    }
+
+    public void setSubCtsNo(String subCtsNo) {
+        this.subCtsNo = subCtsNo;
+    }
+
+    public String getTotalArea() {
+        return totalArea;
+    }
+
+    public void setTotalArea(String totalArea) {
+        this.totalArea = totalArea;
+    }
+
+    public String getDisputedArea() {
+        return disputedArea;
+    }
+
+    public void setDisputedArea(String disputedArea) {
+        this.disputedArea = disputedArea;
+    }
+
+    public String getAreaUnit() {
+        return areaUnit;
+    }
+
+    public void setAreaUnit(String areaUnit) {
+        this.areaUnit = areaUnit;
+    }
+
+    public String getLandHoldersText() {
+        return landHoldersText;
+    }
+
+    public void setLandHoldersText(String landHoldersText) {
+        this.landHoldersText = landHoldersText;
+    }
+
+    public java.util.Map<String, Object> getLandDetail() {
+        return landDetail;
+    }
+
+    public void setLandDetail(java.util.Map<String, Object> landDetail) {
+        this.landDetail = landDetail;
     }
 }

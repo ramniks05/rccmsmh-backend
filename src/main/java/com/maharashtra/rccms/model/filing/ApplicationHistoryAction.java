@@ -27,6 +27,10 @@ public enum ApplicationHistoryAction {
     ORDER_SHEET_FINALIZED,
     /** Case proceeding: order sheet signed (hearing proceeding completed). */
     ORDER_SHEET_SIGNED,
+    /** Case proceeding: judgment draft saved by PO. */
+    JUDGMENT_PO_DRAFT_SAVED,
+    /** Case proceeding: judgment sent to clerk for editing. */
+    JUDGMENT_SENT_TO_CLERK,
     /** Case proceeding: judgment draft saved by clerk. */
     JUDGMENT_DRAFT_SAVED,
     /** Case proceeding: judgment sent to PO. */

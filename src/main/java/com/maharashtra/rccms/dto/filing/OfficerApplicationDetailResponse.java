@@ -35,8 +35,12 @@ public class OfficerApplicationDetailResponse {
     private List<RespondentRowPayload> respondents = new ArrayList<>();
     private List<DisputedLandPayload> disputedLands = new ArrayList<>();
     private List<ApplicationAttachmentPayload> attachments = new ArrayList<>();
+    private ApplicationDocumentChecklistResponse documentChecklist;
+    private ApplicationDescriptionPayload description;
     private List<CaseNoticeResponse> notices = new ArrayList<>();
     private ApplicationHistoryListResponse applicationHistory;
+    private String blueprintCode;
+    private List<String> allowedActions = new ArrayList<>();
 
     public Long getApplicationId() {
         return applicationId;
@@ -246,6 +250,22 @@ public class OfficerApplicationDetailResponse {
         this.attachments = attachments;
     }
 
+    public ApplicationDocumentChecklistResponse getDocumentChecklist() {
+        return documentChecklist;
+    }
+
+    public void setDocumentChecklist(ApplicationDocumentChecklistResponse documentChecklist) {
+        this.documentChecklist = documentChecklist;
+    }
+
+    public ApplicationDescriptionPayload getDescription() {
+        return description;
+    }
+
+    public void setDescription(ApplicationDescriptionPayload description) {
+        this.description = description;
+    }
+
     public List<CaseNoticeResponse> getNotices() {
         return notices;
     }
@@ -260,5 +280,21 @@ public class OfficerApplicationDetailResponse {
 
     public void setApplicationHistory(ApplicationHistoryListResponse applicationHistory) {
         this.applicationHistory = applicationHistory;
+    }
+
+    public String getBlueprintCode() {
+        return blueprintCode;
+    }
+
+    public void setBlueprintCode(String blueprintCode) {
+        this.blueprintCode = blueprintCode;
+    }
+
+    public List<String> getAllowedActions() {
+        return allowedActions;
+    }
+
+    public void setAllowedActions(List<String> allowedActions) {
+        this.allowedActions = allowedActions;
     }
 }

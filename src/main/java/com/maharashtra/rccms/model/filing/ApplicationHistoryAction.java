@@ -7,8 +7,10 @@ public enum ApplicationHistoryAction {
     RETURNED_TO_CLERK,
     PO_REJECTED,
     CASE_REGISTERED,
-    /** Case proceeding: hearing scheduled. */
+    /** Case proceeding: first / manual hearing scheduled. */
     HEARING_SCHEDULED,
+    /** Case proceeding: next hearing date fixed on adjourn (not a separate manual schedule). */
+    NEXT_HEARING_ADJOURN,
     /** Case proceeding: notice drafted (officer view). */
     NOTICE_DRAFTED,
     /** Case proceeding: notice under PO scrutiny. */
@@ -27,6 +29,10 @@ public enum ApplicationHistoryAction {
     ORDER_SHEET_FINALIZED,
     /** Case proceeding: order sheet signed (hearing proceeding completed). */
     ORDER_SHEET_SIGNED,
+    /** Case proceeding: judgment draft saved by PO. */
+    JUDGMENT_PO_DRAFT_SAVED,
+    /** Case proceeding: judgment sent to clerk for editing. */
+    JUDGMENT_SENT_TO_CLERK,
     /** Case proceeding: judgment draft saved by clerk. */
     JUDGMENT_DRAFT_SAVED,
     /** Case proceeding: judgment sent to PO. */

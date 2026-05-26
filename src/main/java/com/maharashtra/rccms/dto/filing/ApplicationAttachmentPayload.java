@@ -8,6 +8,7 @@ import java.time.Instant;
 public class ApplicationAttachmentPayload {
 
     private String kind;
+    private Long documentTypeId;
     private String storageKey;
     private String fileName;
     private String mimeType;
@@ -20,6 +21,14 @@ public class ApplicationAttachmentPayload {
 
     public void setKind(String kind) {
         this.kind = kind;
+    }
+
+    public Long getDocumentTypeId() {
+        return documentTypeId;
+    }
+
+    public void setDocumentTypeId(Long documentTypeId) {
+        this.documentTypeId = documentTypeId;
     }
 
     public String getStorageKey() {

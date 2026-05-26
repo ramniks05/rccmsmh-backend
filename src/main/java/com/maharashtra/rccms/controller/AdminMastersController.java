@@ -57,6 +57,7 @@ import com.maharashtra.rccms.repository.ActRepository;
 import com.maharashtra.rccms.repository.CaseCategoryRepository;
 import com.maharashtra.rccms.repository.DepartmentRepository;
 import com.maharashtra.rccms.repository.DesignationRepository;
+import com.maharashtra.rccms.repository.DocumentTypeMappingRepository;
 import com.maharashtra.rccms.repository.DocumentTypeRepository;
 import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.DivisionRepository;
@@ -85,6 +86,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 @RestController
@@ -98,6 +100,7 @@ public class AdminMastersController {
     private final DepartmentRepository departmentRepository;
     private final DesignationRepository designationRepository;
     private final DocumentTypeRepository documentTypeRepository;
+    private final DocumentTypeMappingRepository documentTypeMappingRepository;
     private final OfficeRepository officeRepository;
     private final OfficeTypeRepository officeTypeRepository;
     private final OccupationRepository occupationRepository;
@@ -116,6 +119,7 @@ public class AdminMastersController {
             DepartmentRepository departmentRepository,
             DesignationRepository designationRepository,
             DocumentTypeRepository documentTypeRepository,
+            DocumentTypeMappingRepository documentTypeMappingRepository,
             OfficeRepository officeRepository,
             OfficeTypeRepository officeTypeRepository,
             OccupationRepository occupationRepository,
@@ -133,6 +137,7 @@ public class AdminMastersController {
         this.departmentRepository = departmentRepository;
         this.designationRepository = designationRepository;
         this.documentTypeRepository = documentTypeRepository;
+        this.documentTypeMappingRepository = documentTypeMappingRepository;
         this.officeRepository = officeRepository;
         this.officeTypeRepository = officeTypeRepository;
         this.occupationRepository = occupationRepository;
@@ -390,6 +395,16 @@ public class AdminMastersController {
         return ResponseEntity.ok(items);
     }
 
+    @GetMapping("/document-types/{id}")
+    public ResponseEntity<?> getDocumentType(@PathVariable("id") Long id) {
+        Long docId = id;
+        Optional<DocumentType> doc = documentTypeRepository.findById(docId);
+        if (doc.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid document type id"));
+        }
+        return ResponseEntity.ok(toDocumentTypeResponse(doc.get()));
+    }
+
     @PutMapping("/document-types/{id}")
     public ResponseEntity<?> updateDocumentType(@PathVariable("id") Long id, @RequestBody DocumentTypeUpdateRequest request) {
         try {
@@ -419,6 +434,12 @@ public class AdminMastersController {
             Map<String, Object> body = new HashMap<>();
             body.put("error", "Invalid document type id");
             return ResponseEntity.badRequest().body(body);
+        }
+        if (documentTypeMappingRepository.countByDocumentTypeId(docId) > 0) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error",
+                    "Document type is mapped to one or more case category / subject combinations. Remove mappings first."
+            ));
         }
         documentTypeRepository.deleteById(docId);
         Map<String, Object> body = new HashMap<>();

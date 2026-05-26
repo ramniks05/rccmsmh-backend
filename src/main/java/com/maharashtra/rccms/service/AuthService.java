@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @Service
@@ -83,7 +84,7 @@ public class AuthService {
         AdvocateRegistration user = advocateRegistrationRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException(INVALID_CREDENTIALS));
         assertPassword(password, user.getPasswordHash());
-        return buildAuthResponse(user.getEmail(), user.getFullName(), UserRole.ADVOCATE);
+        return buildAdvocateAuthResponse(user);
     }
 
     private AuthResponse loginPartyInPerson(String loginId, String password, UserRole requestedRole) {
@@ -118,6 +119,23 @@ public class AuthService {
         }
     }
 
+    private AuthResponse buildAdvocateAuthResponse(AdvocateRegistration user) {
+        String loginId = user.getEmail();
+        String displayName = user.getFullName();
+        String barEnrollmentNumber = trimToNull(user.getBarEnrollmentNumber());
+
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", UserRole.ADVOCATE.name());
+        claims.put("name", displayName);
+        if (barEnrollmentNumber != null) {
+            claims.put("barEnrollmentNumber", barEnrollmentNumber);
+        }
+
+        String token = jwtService.generateToken(loginId, claims);
+        return new AuthResponse(token, "Bearer", UserRole.ADVOCATE.name(), displayName,
+                null, null, null, null, null, barEnrollmentNumber);
+    }
+
     private AuthResponse buildAuthResponse(String loginId, String displayName, UserRole role) {
         return buildAuthResponse(loginId, displayName, role, null, null, null, null, null);
     }
@@ -137,7 +155,15 @@ public class AuthService {
                 "name", displayName
         ));
         return new AuthResponse(token, "Bearer", role.name(), displayName, designationId, designationName,
-                officeId, officeName, officeCode);
+                officeId, officeName, officeCode, null);
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private EmployeePosting resolveOfficerCurrentPosting(String login) {

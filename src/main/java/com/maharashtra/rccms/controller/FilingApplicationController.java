@@ -1,5 +1,6 @@
 package com.maharashtra.rccms.controller;
 
+import com.maharashtra.rccms.dto.filing.ApplicationDocumentChecklistSaveRequest;
 import com.maharashtra.rccms.dto.filing.ApplicationSavePayload;
 import com.maharashtra.rccms.dto.filing.ApplicationSaveResponse;
 import com.maharashtra.rccms.dto.filing.ApplicationActionRequest;
@@ -16,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -74,6 +76,31 @@ public class FilingApplicationController {
         }
     }
 
+    @GetMapping("/officer/{applicationId}/document-checklist")
+    public ResponseEntity<?> officerDocumentChecklist(
+            @PathVariable("applicationId") Long applicationId,
+            Principal principal
+    ) {
+        try {
+            return ResponseEntity.ok(filingApplicationService.getOfficerDocumentChecklist(applicationId, principal));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @PutMapping("/officer/{applicationId}/document-checklist")
+    public ResponseEntity<?> saveOfficerDocumentChecklist(
+            @PathVariable("applicationId") Long applicationId,
+            @RequestBody ApplicationDocumentChecklistSaveRequest body,
+            Principal principal
+    ) {
+        try {
+            return ResponseEntity.ok(filingApplicationService.saveOfficerDocumentChecklist(applicationId, body, principal));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
     @GetMapping("/{applicationId}/history")
     public ResponseEntity<?> applicationHistory(@PathVariable("applicationId") Long applicationId, Principal principal) {
         try {
@@ -88,6 +115,16 @@ public class FilingApplicationController {
     public ResponseEntity<?> officerApplicationHistory(@PathVariable("applicationId") Long applicationId, Principal principal) {
         try {
             ApplicationHistoryListResponse result = filingApplicationService.getOfficerApplicationHistory(applicationId, principal);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/officer/{applicationId}/preview")
+    public ResponseEntity<?> officerApplicationPreview(@PathVariable("applicationId") Long applicationId, Principal principal) {
+        try {
+            PartyApplicationPreviewResponse result = filingApplicationService.getOfficerApplicationPreview(applicationId, principal);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));

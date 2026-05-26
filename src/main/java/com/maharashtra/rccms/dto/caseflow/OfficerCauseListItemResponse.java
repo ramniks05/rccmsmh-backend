@@ -23,6 +23,8 @@ public class OfficerCauseListItemResponse {
     private Instant roznamaUpdatedAt;
     private Boolean canEdit;
     private Boolean roznamaLinkedToHearing;
+    private Boolean noticeServed;
+    private Boolean proceedingAllowed;
 
     public Integer getRowNo() {
         return rowNo;
@@ -174,5 +176,21 @@ public class OfficerCauseListItemResponse {
 
     public void setRoznamaLinkedToHearing(Boolean roznamaLinkedToHearing) {
         this.roznamaLinkedToHearing = roznamaLinkedToHearing;
+    }
+
+    public Boolean getNoticeServed() {
+        return noticeServed;
+    }
+
+    public void setNoticeServed(Boolean noticeServed) {
+        this.noticeServed = noticeServed;
+    }
+
+    public Boolean getProceedingAllowed() {
+        return proceedingAllowed;
+    }
+
+    public void setProceedingAllowed(Boolean proceedingAllowed) {
+        this.proceedingAllowed = proceedingAllowed;
     }
 }

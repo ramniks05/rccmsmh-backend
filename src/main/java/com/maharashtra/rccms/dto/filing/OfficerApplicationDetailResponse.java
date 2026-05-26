@@ -23,6 +23,8 @@ public class OfficerApplicationDetailResponse {
     private Long subjectId;
     private String subjectName;
     private String applicationDescription;
+    private String affidavitText;
+    private String prayerText;
     private String filedByName;
     private String filedByRole;
     private Instant createdAt;
@@ -35,8 +37,14 @@ public class OfficerApplicationDetailResponse {
     private List<RespondentRowPayload> respondents = new ArrayList<>();
     private List<DisputedLandPayload> disputedLands = new ArrayList<>();
     private List<ApplicationAttachmentPayload> attachments = new ArrayList<>();
+    private ApplicationDocumentChecklistResponse documentChecklist;
+    private ApplicationDescriptionPayload description;
+    /** Parsed save payload for UI replay when normalized columns are incomplete. */
+    private Object formSnapshot;
     private List<CaseNoticeResponse> notices = new ArrayList<>();
     private ApplicationHistoryListResponse applicationHistory;
+    private String blueprintCode;
+    private List<String> allowedActions = new ArrayList<>();
 
     public Long getApplicationId() {
         return applicationId;
@@ -158,6 +166,22 @@ public class OfficerApplicationDetailResponse {
         this.applicationDescription = applicationDescription;
     }
 
+    public String getAffidavitText() {
+        return affidavitText;
+    }
+
+    public void setAffidavitText(String affidavitText) {
+        this.affidavitText = affidavitText;
+    }
+
+    public String getPrayerText() {
+        return prayerText;
+    }
+
+    public void setPrayerText(String prayerText) {
+        this.prayerText = prayerText;
+    }
+
     public String getFiledByName() {
         return filedByName;
     }
@@ -246,6 +270,30 @@ public class OfficerApplicationDetailResponse {
         this.attachments = attachments;
     }
 
+    public ApplicationDocumentChecklistResponse getDocumentChecklist() {
+        return documentChecklist;
+    }
+
+    public void setDocumentChecklist(ApplicationDocumentChecklistResponse documentChecklist) {
+        this.documentChecklist = documentChecklist;
+    }
+
+    public ApplicationDescriptionPayload getDescription() {
+        return description;
+    }
+
+    public void setDescription(ApplicationDescriptionPayload description) {
+        this.description = description;
+    }
+
+    public Object getFormSnapshot() {
+        return formSnapshot;
+    }
+
+    public void setFormSnapshot(Object formSnapshot) {
+        this.formSnapshot = formSnapshot;
+    }
+
     public List<CaseNoticeResponse> getNotices() {
         return notices;
     }
@@ -260,5 +308,21 @@ public class OfficerApplicationDetailResponse {
 
     public void setApplicationHistory(ApplicationHistoryListResponse applicationHistory) {
         this.applicationHistory = applicationHistory;
+    }
+
+    public String getBlueprintCode() {
+        return blueprintCode;
+    }
+
+    public void setBlueprintCode(String blueprintCode) {
+        this.blueprintCode = blueprintCode;
+    }
+
+    public List<String> getAllowedActions() {
+        return allowedActions;
+    }
+
+    public void setAllowedActions(List<String> allowedActions) {
+        this.allowedActions = allowedActions;
     }
 }

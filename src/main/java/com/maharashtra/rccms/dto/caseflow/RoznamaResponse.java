@@ -1,6 +1,8 @@
 package com.maharashtra.rccms.dto.caseflow;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public class RoznamaResponse {
     private Long id;
@@ -11,9 +13,20 @@ public class RoznamaResponse {
     private String draftContent;
     private String finalContent;
     private String status;
+    private String hearingOutcome;
+    private Boolean finalHearing;
+    private Long nextHearingId;
+    private java.time.LocalDate nextHearingDate;
+    private String caseStatus;
+    private String message;
     private String digitalSignatureRef;
     private Instant updatedAt;
     private String updatedByLoginId;
+    private boolean attendanceRequired;
+    private boolean attendanceComplete;
+    private List<HearingAttendanceItemResponse> attendance = new ArrayList<>();
+    /** Per-hearing roznamma rows: prior hearings read-only, current hearing editable. */
+    private List<RoznamaTableEntryResponse> tableRows = new ArrayList<>();
 
     public Long getId() {
         return id;
@@ -79,6 +92,54 @@ public class RoznamaResponse {
         this.status = status;
     }
 
+    public String getHearingOutcome() {
+        return hearingOutcome;
+    }
+
+    public void setHearingOutcome(String hearingOutcome) {
+        this.hearingOutcome = hearingOutcome;
+    }
+
+    public Boolean getFinalHearing() {
+        return finalHearing;
+    }
+
+    public void setFinalHearing(Boolean finalHearing) {
+        this.finalHearing = finalHearing;
+    }
+
+    public Long getNextHearingId() {
+        return nextHearingId;
+    }
+
+    public void setNextHearingId(Long nextHearingId) {
+        this.nextHearingId = nextHearingId;
+    }
+
+    public java.time.LocalDate getNextHearingDate() {
+        return nextHearingDate;
+    }
+
+    public void setNextHearingDate(java.time.LocalDate nextHearingDate) {
+        this.nextHearingDate = nextHearingDate;
+    }
+
+    public String getCaseStatus() {
+        return caseStatus;
+    }
+
+    public void setCaseStatus(String caseStatus) {
+        this.caseStatus = caseStatus;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
     public String getDigitalSignatureRef() {
         return digitalSignatureRef;
     }
@@ -101,5 +162,37 @@ public class RoznamaResponse {
 
     public void setUpdatedByLoginId(String updatedByLoginId) {
         this.updatedByLoginId = updatedByLoginId;
+    }
+
+    public boolean isAttendanceRequired() {
+        return attendanceRequired;
+    }
+
+    public void setAttendanceRequired(boolean attendanceRequired) {
+        this.attendanceRequired = attendanceRequired;
+    }
+
+    public boolean isAttendanceComplete() {
+        return attendanceComplete;
+    }
+
+    public void setAttendanceComplete(boolean attendanceComplete) {
+        this.attendanceComplete = attendanceComplete;
+    }
+
+    public List<HearingAttendanceItemResponse> getAttendance() {
+        return attendance;
+    }
+
+    public void setAttendance(List<HearingAttendanceItemResponse> attendance) {
+        this.attendance = attendance != null ? attendance : new ArrayList<>();
+    }
+
+    public List<RoznamaTableEntryResponse> getTableRows() {
+        return tableRows;
+    }
+
+    public void setTableRows(List<RoznamaTableEntryResponse> tableRows) {
+        this.tableRows = tableRows != null ? tableRows : new ArrayList<>();
     }
 }

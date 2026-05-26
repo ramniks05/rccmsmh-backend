@@ -39,6 +39,14 @@ public class CaseHearing {
     @Column(name = "notice_generated", nullable = false)
     private Boolean noticeGenerated = false;
 
+    /** True after PO serves a signed notice linked to this hearing; required before proceeding/roznama. */
+    @Column(name = "notice_served", nullable = false)
+    private Boolean noticeServed = false;
+
+    /** True when PO signed roznamma with outcome FINAL for this hearing. */
+    @Column(name = "final_hearing", nullable = false)
+    private Boolean finalHearing = false;
+
     @Column(name = "remarks", length = 2000)
     private String remarks;
 
@@ -105,6 +113,22 @@ public class CaseHearing {
 
     public void setNoticeGenerated(Boolean noticeGenerated) {
         this.noticeGenerated = noticeGenerated;
+    }
+
+    public Boolean getNoticeServed() {
+        return noticeServed;
+    }
+
+    public void setNoticeServed(Boolean noticeServed) {
+        this.noticeServed = noticeServed;
+    }
+
+    public Boolean getFinalHearing() {
+        return finalHearing;
+    }
+
+    public void setFinalHearing(Boolean finalHearing) {
+        this.finalHearing = finalHearing;
     }
 
     public String getRemarks() {

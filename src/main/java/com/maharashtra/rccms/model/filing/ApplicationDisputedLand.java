@@ -93,6 +93,27 @@ public class ApplicationDisputedLand {
     @Column(name = "cts_no", length = 255)
     private String ctsNo;
 
+    @Column(name = "parent_cts_no", length = 128)
+    private String parentCtsNo;
+
+    @Column(name = "sub_cts_no", length = 128)
+    private String subCtsNo;
+
+    @Column(name = "total_area", length = 64)
+    private String totalArea;
+
+    @Column(name = "disputed_area", length = 64)
+    private String disputedArea;
+
+    @Column(name = "area_unit", length = 32)
+    private String areaUnit;
+
+    @Column(name = "land_holders_text", length = 2048)
+    private String landHoldersText;
+
+    @Column(name = "land_detail_json", columnDefinition = "TEXT")
+    private String landDetailJson;
+
     public Long getId() {
         return id;
     }
@@ -279,5 +300,61 @@ public class ApplicationDisputedLand {
 
     public void setCtsNo(String ctsNo) {
         this.ctsNo = ctsNo;
+    }
+
+    public String getParentCtsNo() {
+        return parentCtsNo;
+    }
+
+    public void setParentCtsNo(String parentCtsNo) {
+        this.parentCtsNo = parentCtsNo;
+    }
+
+    public String getSubCtsNo() {
+        return subCtsNo;
+    }
+
+    public void setSubCtsNo(String subCtsNo) {
+        this.subCtsNo = subCtsNo;
+    }
+
+    public String getTotalArea() {
+        return totalArea;
+    }
+
+    public void setTotalArea(String totalArea) {
+        this.totalArea = totalArea;
+    }
+
+    public String getDisputedArea() {
+        return disputedArea;
+    }
+
+    public void setDisputedArea(String disputedArea) {
+        this.disputedArea = disputedArea;
+    }
+
+    public String getAreaUnit() {
+        return areaUnit;
+    }
+
+    public void setAreaUnit(String areaUnit) {
+        this.areaUnit = areaUnit;
+    }
+
+    public String getLandHoldersText() {
+        return landHoldersText;
+    }
+
+    public void setLandHoldersText(String landHoldersText) {
+        this.landHoldersText = landHoldersText;
+    }
+
+    public String getLandDetailJson() {
+        return landDetailJson;
+    }
+
+    public void setLandDetailJson(String landDetailJson) {
+        this.landDetailJson = landDetailJson;
     }
 }

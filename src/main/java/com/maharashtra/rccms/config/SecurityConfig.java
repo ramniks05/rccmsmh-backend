@@ -60,6 +60,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/advocates/me/**").hasRole("ADVOCATE")
                         .requestMatchers("/api/filing-applications/officer/**").hasRole("OFFICER")
                         .requestMatchers("/api/cases/officer/**").hasRole("OFFICER")
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/filing-applications/*/preview",
+                                "/api/filing-applications/*/history",
+                                "/api/filing-applications/*/notices"
+                        ).hasAnyRole(
+                                "ADVOCATE", "PARTY_IN_PERSON", "PARTY_IN_PERSON_REPRESENTATIVE", "OFFICER")
                         .requestMatchers("/api/filing-applications/**").hasAnyRole(
                                 "ADVOCATE", "PARTY_IN_PERSON", "PARTY_IN_PERSON_REPRESENTATIVE")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

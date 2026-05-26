@@ -1,27 +1,36 @@
 package com.maharashtra.rccms.service;
 
 import com.maharashtra.rccms.dto.caseflow.CaseHearingResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseHearingRescheduleRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseHearingScheduleRequest;
+import com.maharashtra.rccms.model.caseflow.HearingOutcome;
 import com.maharashtra.rccms.dto.caseflow.CaseInboxItemResponse;
-import com.maharashtra.rccms.dto.caseflow.CaseJudgmentRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseJudgmentResponse;
 import com.maharashtra.rccms.dto.caseflow.OfficerDashboardResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetHistoryResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetResponse;
 import com.maharashtra.rccms.dto.caseflow.OfficerCauseListItemResponse;
 import com.maharashtra.rccms.dto.caseflow.OfficerRoznamaTableResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseRoznamaCompleteRequest;
+import com.maharashtra.rccms.dto.caseflow.CaseRoznamaCompleteResponse;
+import com.maharashtra.rccms.dto.caseflow.HearingAttendanceResponse;
+import com.maharashtra.rccms.dto.caseflow.HearingAttendanceSaveRequest;
 import com.maharashtra.rccms.dto.caseflow.RoznamaResponse;
+import com.maharashtra.rccms.dto.caseflow.RoznamaTableEntryResponse;
+import com.maharashtra.rccms.filing.RoznamaContentHelper;
 import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetFinalizeRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetSignRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseOrderSheetUpsertRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseNoticeDraftRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseNoticeFinalizeRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
-import com.maharashtra.rccms.dto.caseflow.CaseNoticeSignRequest;
-import com.maharashtra.rccms.dto.caseflow.CaseWorkflowActionResponse;
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeServeToPartyRequest;
+import com.maharashtra.rccms.dto.caseflow.CaseNoticeServeToPartyResponse;
+import com.maharashtra.rccms.dto.caseflow.OfficerNoticeServeQueueItemResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseJudgmentDraftRequest;
+import com.maharashtra.rccms.dto.caseflow.CaseJudgmentSignPublishRequest;
+import com.maharashtra.rccms.dto.caseflow.CaseJudgmentResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseJudgmentWorkflowResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseWorkflowRevertRequest;
+import com.maharashtra.rccms.dto.workflow.CaseWorkflowContextResponse;
+import com.maharashtra.rccms.dto.workflow.NoticeTemplateResolvedResponse;
 import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
 import com.maharashtra.rccms.dto.filing.OfficerApplicationDetailResponse;
@@ -58,6 +67,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.maharashtra.rccms.workflow.WorkflowAction;
+
 @Service
 @SuppressWarnings("null")
 public class CaseProceedingService {
@@ -71,6 +82,12 @@ public class CaseProceedingService {
     private final EmployeeRepository employeeRepository;
     private final EmployeePostingRepository employeePostingRepository;
     private final FilingApplicationService filingApplicationService;
+    private final WorkflowPolicyService workflowPolicyService;
+    private final WorkflowContextService workflowContextService;
+    private final NoticeTemplateService noticeTemplateService;
+    private final JudgmentWorkflowHistoryService judgmentWorkflowHistoryService;
+    private final CaseRegistryStatusSyncService caseRegistryStatusSyncService;
+    private final CaseHearingAttendanceService caseHearingAttendanceService;
 
     public CaseProceedingService(
             CaseRegistryRepository caseRegistryRepository,
@@ -81,7 +98,13 @@ public class CaseProceedingService {
             CaseOrderSheetHistoryRepository caseOrderSheetHistoryRepository,
             EmployeeRepository employeeRepository,
             EmployeePostingRepository employeePostingRepository,
-            FilingApplicationService filingApplicationService
+            FilingApplicationService filingApplicationService,
+            WorkflowPolicyService workflowPolicyService,
+            WorkflowContextService workflowContextService,
+            NoticeTemplateService noticeTemplateService,
+            JudgmentWorkflowHistoryService judgmentWorkflowHistoryService,
+            CaseRegistryStatusSyncService caseRegistryStatusSyncService,
+            CaseHearingAttendanceService caseHearingAttendanceService
     ) {
         this.caseRegistryRepository = caseRegistryRepository;
         this.caseHearingRepository = caseHearingRepository;
@@ -92,6 +115,39 @@ public class CaseProceedingService {
         this.employeeRepository = employeeRepository;
         this.employeePostingRepository = employeePostingRepository;
         this.filingApplicationService = filingApplicationService;
+        this.workflowPolicyService = workflowPolicyService;
+        this.workflowContextService = workflowContextService;
+        this.noticeTemplateService = noticeTemplateService;
+        this.judgmentWorkflowHistoryService = judgmentWorkflowHistoryService;
+        this.caseRegistryStatusSyncService = caseRegistryStatusSyncService;
+        this.caseHearingAttendanceService = caseHearingAttendanceService;
+    }
+
+    @Transactional(readOnly = true)
+    public CaseWorkflowContextResponse getWorkflowContext(Long caseId, Long hearingId, Principal principal) {
+        return workflowContextService.buildCaseContext(caseId, hearingId, principal);
+    }
+
+    @Transactional(readOnly = true)
+    public NoticeTemplateResolvedResponse resolveNoticeTemplate(
+            Long caseId,
+            String noticeType,
+            Long hearingId,
+            String partyNamesBlock,
+            Principal principal
+    ) {
+        String login = normalizeLogin(principal);
+        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
+        LocalDate hearingDate = null;
+        if (hearingId != null) {
+            CaseHearing hearing = caseHearingRepository.findById(hearingId)
+                    .orElseThrow(() -> new IllegalArgumentException("Invalid hearingId."));
+            if (!Objects.equals(hearing.getCaseRegistry().getId(), caseId)) {
+                throw new IllegalArgumentException("hearingId does not belong to case.");
+            }
+            hearingDate = hearing.getHearingDate();
+        }
+        return noticeTemplateService.resolveForCase(caseRow, noticeType, hearingDate, partyNamesBlock);
     }
 
     @Transactional(readOnly = true)
@@ -123,18 +179,70 @@ public class CaseProceedingService {
             caseIds.add(row.getId());
         }
         Map<Long, CaseOrderSheet> roznamaByCaseId = loadRoznamaByCaseIds(caseIds);
+        Map<Long, CaseHearing> latestHearingByCaseId = loadLatestHearingByCaseIds(caseIds);
         for (CaseRegistry row : rows) {
             if (s == null && "DISPOSED".equalsIgnoreCase(row.getStatus())) {
                 continue;
             }
-            out.add(toCaseInboxItem(row, roznamaByCaseId.get(row.getId())));
+            CaseHearing latestHearing = latestHearingByCaseId.get(row.getId());
+            boolean noticeServed = caseRegistryStatusSyncService.isNoticeServedForCase(row.getId(), latestHearing);
+            if (noticeServed) {
+                caseRegistryStatusSyncService.syncNoticeServedIfNeeded(
+                        row.getId(),
+                        latestHearing != null ? latestHearing.getId() : null
+                );
+            }
+            out.add(toCaseInboxItem(
+                    row,
+                    roznamaByCaseId.get(row.getId()),
+                    latestHearing,
+                    noticeServed
+            ));
         }
         return out;
     }
 
+    /**
+     * All hearings in the officer's office where a hearing date is assigned and notice is not yet served
+     * (Send notice to party menu). Not filtered by calendar date — use cause-list for a single day.
+     */
     @Transactional(readOnly = true)
-    public List<OfficerCauseListItemResponse> listCauseList(Principal principal, LocalDate date) {
-        return listRoznamaTable(principal, date).getRows();
+    public List<OfficerNoticeServeQueueItemResponse> listPendingNoticeServe(Principal principal) {
+        String login = normalizeLogin(principal);
+        EmployeePosting posting = resolveOfficerPosting(login);
+        assertPo(posting);
+        Long officeId = resolveOfficerCurrentOfficeId(login);
+        List<CaseHearing> hearings = caseHearingRepository.findPendingNoticeServeByOfficeId(officeId);
+
+        List<OfficerNoticeServeQueueItemResponse> out = new ArrayList<>();
+        int rowNo = 1;
+        for (CaseHearing hearing : hearings) {
+            CaseRegistry caseRow = hearing.getCaseRegistry();
+            if (caseRow == null) {
+                continue;
+            }
+            CaseNotice activeNotice = findActiveNoticeForHearing(hearing.getId());
+
+            OfficerNoticeServeQueueItemResponse item = new OfficerNoticeServeQueueItemResponse();
+            item.setRowNo(rowNo++);
+            item.setQueueDate(hearing.getHearingDate());
+            item.setCaseId(caseRow.getId());
+            item.setCaseNo(caseRow.getCaseNo());
+            item.setCaseStatus(caseRow.getStatus());
+            item.setFilingApplicationId(caseRow.getFilingApplicationId());
+            item.setCaseCategoryName(caseRow.getCaseCategory() != null ? caseRow.getCaseCategory().getName() : null);
+            item.setHearingId(hearing.getId());
+            item.setHearingNo(hearing.getHearingNo());
+            item.setHearingDate(hearing.getHearingDate());
+            item.setHearingStatus(hearing.getStatus());
+            if (activeNotice != null) {
+                item.setNoticeId(activeNotice.getId());
+                item.setNoticeStatus(activeNotice.getStatus() != null ? activeNotice.getStatus().name() : null);
+            }
+            item.setAllowedActions(workflowPolicyService.noticeAllowed(caseRow, posting, hearing, activeNotice));
+            out.add(item);
+        }
+        return out;
     }
 
     @Transactional(readOnly = true)
@@ -174,6 +282,9 @@ public class CaseProceedingService {
             item.setHearingNo(hearing.getHearingNo());
             item.setHearingDate(hearing.getHearingDate());
             item.setHearingStatus(hearing.getStatus());
+            boolean noticeServed = Boolean.TRUE.equals(hearing.getNoticeServed());
+            item.setNoticeServed(noticeServed);
+            item.setProceedingAllowed(noticeServed);
             CaseOrderSheet sheet = roznamaByCaseId.get(caseRow.getId());
             List<CaseOrderSheetHistory> histories = historyByCaseId.getOrDefault(caseRow.getId(), Collections.emptyList());
             applyRoznamaFieldsForHearing(item, sheet, histories, hearing);
@@ -203,150 +314,143 @@ public class CaseProceedingService {
         return out;
     }
 
+    /**
+     * One-shot serve: saves notice content and selected parties, then internally finalizes,
+     * digitally signs, and serves (PO_FINALIZED → PO_SIGNED → SERVED, hearing.noticeServed = true).
+     */
     @Transactional
-    public CaseWorkflowActionResponse draftNotice(Long caseId, CaseNoticeDraftRequest request, Principal principal) {
-        if (request == null || trimToNull(request.getDraftContent()) == null) {
-            throw new IllegalArgumentException("draftContent is required.");
+    public CaseNoticeServeToPartyResponse serveNoticeToParty(
+            Long caseId,
+            CaseNoticeServeToPartyRequest request,
+            Principal principal
+    ) {
+        if (request == null || request.getHearingId() == null) {
+            throw new IllegalArgumentException("hearingId is required.");
         }
+        if (request.getSelectedParties() == null || request.getSelectedParties().isEmpty()) {
+            throw new IllegalArgumentException("selectedParties is required (at least one party).");
+        }
+        String content = trimToNull(request.getDraftContent());
+        if (content == null) {
+            content = trimToNull(request.getFinalContent());
+        }
+        if (content == null) {
+            throw new IllegalArgumentException("draftContent (notice body) is required.");
+        }
+
         String login = normalizeLogin(principal);
         EmployeePosting posting = resolveOfficerPosting(login);
-        assertClerk(posting);
+        assertPo(posting);
         CaseRegistry caseRow = resolveOfficerCase(caseId, login);
         assertNotDisposed(caseRow);
 
-        CaseNotice row = new CaseNotice();
-        row.setCaseRegistry(caseRow);
-        if (request.getHearingId() != null) {
-            CaseHearing hearing = caseHearingRepository.findById(request.getHearingId())
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid hearingId."));
-            if (!Objects.equals(hearing.getCaseRegistry().getId(), caseId)) {
-                throw new IllegalArgumentException("hearingId does not belong to case.");
-            }
-            row.setHearing(hearing);
+        CaseHearing hearing = caseHearingRepository.findById(request.getHearingId())
+                .orElseThrow(() -> new IllegalArgumentException("Invalid hearingId."));
+        if (!Objects.equals(hearing.getCaseRegistry().getId(), caseId)) {
+            throw new IllegalArgumentException("hearingId does not belong to case.");
         }
-        row.setNoticeType(trimToNull(request.getNoticeType()) != null ? request.getNoticeType().trim() : "HEARING_NOTICE");
-        row.setDraftContent(request.getDraftContent().trim());
-        row.setSelectedPartiesJson(toJsonArray(request.getSelectedParties()));
-        row.setStatus(CaseNoticeStatus.CLERK_DRAFT);
-        row.setClerkDraftedByLoginId(login);
-        row = caseNoticeRepository.save(row);
-
-        return buildWorkflowAction(caseId, row.getId(), row.getStatus().name(), "Notice draft saved by clerk.");
-    }
-
-    @Transactional
-    public CaseWorkflowActionResponse submitNoticeToPo(Long caseId, Long noticeId, Principal principal) {
-        String login = normalizeLogin(principal);
-        EmployeePosting posting = resolveOfficerPosting(login);
-        assertClerk(posting);
-        resolveOfficerCase(caseId, login);
-
-        CaseNotice row = caseNoticeRepository.findByIdAndCaseRegistryId(noticeId, caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Notice not found for case."));
-        if (row.getStatus() != CaseNoticeStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException("Only clerk draft notice can be submitted to PO scrutiny.");
+        if (hearing.getHearingDate() == null) {
+            throw new IllegalArgumentException("Hearing date must be assigned before serving notice to parties.");
         }
-        row.setStatus(CaseNoticeStatus.PO_SCRUTINY);
-        row = caseNoticeRepository.save(row);
-        return buildWorkflowAction(caseId, row.getId(), row.getStatus().name(), "Notice submitted to PO for scrutiny.");
-    }
+        if (Boolean.TRUE.equals(hearing.getNoticeServed())) {
+            throw new IllegalArgumentException("Notice is already served for this hearing.");
+        }
 
-    @Transactional
-    public CaseWorkflowActionResponse finalizeNotice(Long caseId, Long noticeId, CaseNoticeFinalizeRequest request, Principal principal) {
-        String login = normalizeLogin(principal);
-        EmployeePosting posting = resolveOfficerPosting(login);
-        assertPo(posting);
-        resolveOfficerCase(caseId, login);
-        CaseNotice row = caseNoticeRepository.findByIdAndCaseRegistryId(noticeId, caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Notice not found for case."));
-        if (row.getStatus() != CaseNoticeStatus.PO_SCRUTINY) {
-            throw new IllegalArgumentException("Only notice under PO scrutiny can be finalized.");
-        }
-        String content = request != null ? trimToNull(request.getFinalContent()) : null;
-        if (content == null) {
-            content = trimToNull(row.getDraftContent());
-        }
-        if (content == null) {
-            throw new IllegalArgumentException("Notice draft content is missing; cannot finalize.");
-        }
-        row.setFinalContent(content);
-        row.setPoFinalizedByLoginId(login);
-        row.setStatus(CaseNoticeStatus.PO_FINALIZED);
-        row = caseNoticeRepository.save(row);
-        return buildWorkflowAction(caseId, row.getId(), row.getStatus().name(), "Notice finalized by PO.");
-    }
+        String noticeType = trimToNull(request.getNoticeType()) != null
+                ? request.getNoticeType().trim()
+                : "HEARING_NOTICE";
+        CaseNotice row = resolveOrCreateActiveNotice(caseRow, hearing, login, noticeType);
+        requireCaseAction(caseRow, posting, hearing, row,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null),
+                WorkflowAction.SERVE_NOTICE_TO_PARTY);
 
-    @Transactional
-    public CaseWorkflowActionResponse signNotice(Long caseId, Long noticeId, CaseNoticeSignRequest request, Principal principal) {
-        if (request == null || trimToNull(request.getDigitalSignatureRef()) == null) {
-            throw new IllegalArgumentException("digitalSignatureRef is required.");
-        }
-        String login = normalizeLogin(principal);
-        EmployeePosting posting = resolveOfficerPosting(login);
-        assertPo(posting);
-        resolveOfficerCase(caseId, login);
-        CaseNotice row = caseNoticeRepository.findByIdAndCaseRegistryId(noticeId, caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Notice not found for case."));
-        if (row.getStatus() != CaseNoticeStatus.PO_FINALIZED) {
-            throw new IllegalArgumentException("Only finalized notice can be digitally signed.");
-        }
-        row.setDigitalSignatureRef(request.getDigitalSignatureRef().trim());
-        row.setPoSignedByLoginId(login);
-        row.setStatus(CaseNoticeStatus.PO_SIGNED);
-        row = caseNoticeRepository.save(row);
-        return buildWorkflowAction(caseId, row.getId(), row.getStatus().name(), "Notice digitally signed by PO.");
-    }
-
-    @Transactional
-    public CaseWorkflowActionResponse revertNoticeToClerk(Long caseId, Long noticeId, CaseWorkflowRevertRequest request, Principal principal) {
-        String remarks = requiredText(request != null ? request.getRemarks() : null, "remarks");
-        String login = normalizeLogin(principal);
-        EmployeePosting posting = resolveOfficerPosting(login);
-        assertPo(posting);
-        resolveOfficerCase(caseId, login);
-
-        CaseNotice row = caseNoticeRepository.findByIdAndCaseRegistryId(noticeId, caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Notice not found for case."));
         if (row.getStatus() == CaseNoticeStatus.SERVED) {
-            throw new IllegalArgumentException("Served notice cannot be reverted.");
+            throw new IllegalArgumentException("Notice already served for this hearing.");
         }
-        if (row.getStatus() == CaseNoticeStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException("Notice is still in clerk draft. Submit to PO scrutiny before revert.");
-        }
-        if (trimToNull(row.getFinalContent()) != null) {
-            row.setDraftContent(row.getFinalContent().trim());
-        }
-        row.setFinalContent(null);
-        row.setDigitalSignatureRef(null);
-        row.setPoSignedByLoginId(null);
-        row.setPoFinalizedByLoginId(null);
-        row.setStatus(CaseNoticeStatus.CLERK_DRAFT);
-        row = caseNoticeRepository.save(row);
-        return buildWorkflowAction(caseId, row.getId(), row.getStatus().name(), "Notice reverted to clerk: " + remarks);
-    }
 
-    @Transactional
-    public CaseWorkflowActionResponse serveNotice(Long caseId, Long noticeId, Principal principal) {
-        String login = normalizeLogin(principal);
-        resolveOfficerCase(caseId, login);
-        CaseNotice row = caseNoticeRepository.findByIdAndCaseRegistryId(noticeId, caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Notice not found for case."));
-        if (row.getStatus() != CaseNoticeStatus.PO_SIGNED) {
-            throw new IllegalArgumentException("Only signed notice can be served.");
+        row.setDraftContent(content);
+        row.setSelectedPartiesJson(toJsonArray(request.getSelectedParties()));
+        if (trimToNull(row.getNoticeType()) == null) {
+            row.setNoticeType(noticeType);
         }
+
+        boolean noticeFinalized = false;
+        boolean noticeSigned = false;
+
+        if (row.getStatus() == CaseNoticeStatus.PO_DRAFT
+                || row.getStatus() == CaseNoticeStatus.CLERK_DRAFT
+                || row.getStatus() == CaseNoticeStatus.PO_SCRUTINY) {
+            row.setFinalContent(content);
+            row.setPoFinalizedByLoginId(login);
+            row.setStatus(CaseNoticeStatus.PO_FINALIZED);
+            noticeFinalized = true;
+        } else if (row.getStatus() == CaseNoticeStatus.PO_FINALIZED) {
+            noticeFinalized = true;
+            if (trimToNull(row.getFinalContent()) == null) {
+                row.setFinalContent(content);
+                row.setPoFinalizedByLoginId(login);
+            }
+        }
+
+        if (row.getStatus() == CaseNoticeStatus.PO_FINALIZED) {
+            String sigRef = trimToNull(request.getDigitalSignatureRef());
+            if (sigRef == null) {
+                sigRef = "PO-SERVE-" + caseId + "-" + hearing.getId() + "-" + System.currentTimeMillis();
+            }
+            row.setDigitalSignatureRef(sigRef);
+            row.setPoSignedByLoginId(login);
+            row.setStatus(CaseNoticeStatus.PO_SIGNED);
+            noticeSigned = true;
+        } else if (row.getStatus() == CaseNoticeStatus.PO_SIGNED) {
+            noticeSigned = true;
+            if (trimToNull(row.getDigitalSignatureRef()) == null) {
+                String sigRef = trimToNull(request.getDigitalSignatureRef());
+                if (sigRef == null) {
+                    sigRef = "PO-SERVE-" + caseId + "-" + hearing.getId() + "-" + System.currentTimeMillis();
+                }
+                row.setDigitalSignatureRef(sigRef);
+                row.setPoSignedByLoginId(login);
+            }
+        }
+
+        Instant servedAt = Instant.now();
         row.setStatus(CaseNoticeStatus.SERVED);
-        row.setServedAt(Instant.now());
+        row.setServedAt(servedAt);
         row.setServedByLoginId(login);
         row = caseNoticeRepository.save(row);
-        return buildWorkflowAction(caseId, row.getId(), row.getStatus().name(), "Notice served to selected parties.");
+
+        hearing.setNoticeServed(true);
+        caseHearingRepository.save(hearing);
+        caseRow.setStatus("NOTICE_SERVED");
+        caseRegistryRepository.save(caseRow);
+
+        CaseNoticeServeToPartyResponse out = new CaseNoticeServeToPartyResponse();
+        out.setCaseId(caseId);
+        out.setHearingId(hearing.getId());
+        out.setNoticeId(row.getId());
+        out.setStatus(row.getStatus().name());
+        out.setSelectedParties(parseJsonArray(row.getSelectedPartiesJson()));
+        out.setDigitalSignatureRef(row.getDigitalSignatureRef());
+        out.setServedAt(servedAt);
+        out.setNoticeFinalized(noticeFinalized || trimToNull(row.getFinalContent()) != null);
+        out.setNoticeSigned(noticeSigned);
+        out.setNoticeServed(true);
+        out.setMessage(
+                "Notice served to selected parties for hearing #"
+                        + hearing.getHearingNo()
+                        + " (template applied, digitally signed)."
+        );
+        return out;
     }
 
     @Transactional(readOnly = true)
     public CaseJudgmentWorkflowResponse getJudgmentWorkflow(Long caseId, Principal principal) {
         String login = normalizeLogin(principal);
+        EmployeePosting posting = resolveOfficerPosting(login);
         CaseRegistry caseRow = resolveOfficerCase(caseId, login);
         CaseJudgmentWorkflow row = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null);
-        return toJudgmentWorkflowResponse(caseRow, row);
+        return enrichJudgmentResponse(caseRow, row, posting);
     }
 
     @Transactional
@@ -358,7 +462,7 @@ public class CaseProceedingService {
             );
         }
         String login = normalizeLogin(principal);
-        resolveOfficerPosting(login);
+        EmployeePosting posting = resolveOfficerPosting(login);
         CaseRegistry caseRow = resolveOfficerCase(caseId, login);
         assertNotDisposed(caseRow);
 
@@ -369,16 +473,72 @@ public class CaseProceedingService {
         if (row.getStatus() == CaseJudgmentWorkflowStatus.PUBLISHED) {
             throw new IllegalArgumentException("Case judgment is already published.");
         }
-        if (row.getStatus() != null && row.getStatus() != CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException(
-                    "Judgment draft can be edited only in clerk draft stage. Revert from PO or wait for PO action."
-            );
+
+        CaseJudgmentWorkflowStatus from = row.getStatus();
+        boolean po = workflowPolicyService.isPo(posting);
+        if (po) {
+            if (from != null
+                    && from != CaseJudgmentWorkflowStatus.PO_DRAFT
+                    && from != CaseJudgmentWorkflowStatus.PO_SCRUTINY) {
+                throw new IllegalArgumentException(
+                        "PO can edit judgment draft only before sending to clerk, or while reviewing clerk draft (PO_SCRUTINY)."
+                );
+            }
+            WorkflowAction draftAction = from == null || from == CaseJudgmentWorkflowStatus.PO_DRAFT
+                    ? WorkflowAction.PO_DRAFT_JUDGMENT
+                    : WorkflowAction.UPDATE_PO_JUDGMENT;
+            requireCaseAction(caseRow, posting, null, null,
+                    caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                    row,
+                    draftAction);
+            row.setDraftSummary(summary.trim());
+            row.setDraftedByLoginId(login);
+            if (from == null || from == CaseJudgmentWorkflowStatus.PO_DRAFT) {
+                row.setStatus(CaseJudgmentWorkflowStatus.PO_DRAFT);
+            }
+            row = caseJudgmentWorkflowRepository.save(row);
+            recordJudgmentHistory(caseRow, row, from, row.getStatus(), draftAction, summary, null, "PRESIDING_OFFICER", login);
+            return enrichJudgmentResponse(caseRow, row, posting);
+        }
+
+        requireCaseAction(caseRow, posting, null, null,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                row,
+                WorkflowAction.CLERK_UPDATE_JUDGMENT);
+        if (row.getStatus() != CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
+            throw new IllegalArgumentException("Judgment can be edited by clerk only when sent from PO.");
         }
         row.setDraftSummary(summary.trim());
         row.setDraftedByLoginId(login);
+        row = caseJudgmentWorkflowRepository.save(row);
+        recordJudgmentHistory(caseRow, row, from, row.getStatus(), WorkflowAction.CLERK_UPDATE_JUDGMENT, summary, null, "CLERK", login);
+        return enrichJudgmentResponse(caseRow, row, posting);
+    }
+
+    @Transactional
+    public CaseJudgmentWorkflowResponse sendJudgmentToClerk(Long caseId, CaseWorkflowRevertRequest request, Principal principal) {
+        String remarks = trimToNull(request != null ? request.getRemarks() : null);
+        String login = normalizeLogin(principal);
+        EmployeePosting posting = resolveOfficerPosting(login);
+        assertPo(posting);
+        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
+        assertNotDisposed(caseRow);
+
+        CaseJudgmentWorkflow row = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("Judgment draft not found. Save PO draft first."));
+        requireCaseAction(caseRow, posting, null, null,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                row,
+                WorkflowAction.SEND_JUDGMENT_TO_CLERK);
+        if (row.getStatus() != CaseJudgmentWorkflowStatus.PO_DRAFT) {
+            throw new IllegalArgumentException("Only PO draft judgment can be sent to clerk.");
+        }
+        CaseJudgmentWorkflowStatus from = row.getStatus();
         row.setStatus(CaseJudgmentWorkflowStatus.CLERK_DRAFT);
         row = caseJudgmentWorkflowRepository.save(row);
-        return toJudgmentWorkflowResponse(caseRow, row);
+        recordJudgmentHistory(caseRow, row, from, row.getStatus(), WorkflowAction.SEND_JUDGMENT_TO_CLERK,
+                row.getDraftSummary(), remarks, "PRESIDING_OFFICER", login);
+        return enrichJudgmentResponse(caseRow, row, posting);
     }
 
     @Transactional
@@ -391,12 +551,19 @@ public class CaseProceedingService {
 
         CaseJudgmentWorkflow row = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("Judgment draft not found."));
+        requireCaseAction(caseRow, posting, null, null,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                row,
+                WorkflowAction.SUBMIT_JUDGMENT_TO_PO);
         if (row.getStatus() != CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
             throw new IllegalArgumentException("Only clerk draft judgment can be submitted to PO scrutiny.");
         }
+        CaseJudgmentWorkflowStatus from = row.getStatus();
         row.setStatus(CaseJudgmentWorkflowStatus.PO_SCRUTINY);
         row = caseJudgmentWorkflowRepository.save(row);
-        return toJudgmentWorkflowResponse(caseRow, row);
+        recordJudgmentHistory(caseRow, row, from, row.getStatus(), WorkflowAction.SUBMIT_JUDGMENT_TO_PO,
+                row.getDraftSummary(), null, "CLERK", login);
+        return enrichJudgmentResponse(caseRow, row, posting);
     }
 
     @Transactional
@@ -409,9 +576,14 @@ public class CaseProceedingService {
 
         CaseJudgmentWorkflow row = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("Judgment draft not found."));
+        requireCaseAction(caseRow, posting, null, null,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                row,
+                WorkflowAction.FINALIZE_JUDGMENT);
         if (row.getStatus() != CaseJudgmentWorkflowStatus.PO_SCRUTINY) {
             throw new IllegalArgumentException("Only judgment under PO scrutiny can be finalized by PO.");
         }
+        CaseJudgmentWorkflowStatus from = row.getStatus();
         String summary = request != null ? request.resolveSummary() : null;
         if (trimToNull(summary) == null) {
             summary = trimToNull(row.getDraftSummary());
@@ -423,12 +595,14 @@ public class CaseProceedingService {
         row.setFinalizedByLoginId(login);
         row.setStatus(CaseJudgmentWorkflowStatus.PO_FINALIZED);
         row = caseJudgmentWorkflowRepository.save(row);
-        return toJudgmentWorkflowResponse(caseRow, row);
+        recordJudgmentHistory(caseRow, row, from, row.getStatus(), WorkflowAction.FINALIZE_JUDGMENT,
+                summary, null, "PRESIDING_OFFICER", login);
+        return enrichJudgmentResponse(caseRow, row, posting);
     }
 
     @Transactional
     public CaseJudgmentWorkflowResponse revertJudgmentToClerk(Long caseId, CaseWorkflowRevertRequest request, Principal principal) {
-        requiredText(request != null ? request.getRemarks() : null, "remarks");
+        String remarks = requiredText(request != null ? request.getRemarks() : null, "remarks");
         String login = normalizeLogin(principal);
         EmployeePosting posting = resolveOfficerPosting(login);
         assertPo(posting);
@@ -438,6 +612,10 @@ public class CaseProceedingService {
         }
         CaseJudgmentWorkflow row = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("Judgment workflow not found."));
+        requireCaseAction(caseRow, posting, null, null,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                row,
+                WorkflowAction.REVERT_JUDGMENT_TO_CLERK);
         if (row.getStatus() == CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
             throw new IllegalArgumentException("Judgment is still in clerk draft. Submit to PO scrutiny before revert.");
         }
@@ -450,33 +628,122 @@ public class CaseProceedingService {
         }
         row.setFinalSummary(null);
         row.setFinalizedByLoginId(null);
+        CaseJudgmentWorkflowStatus from = row.getStatus();
         row.setStatus(CaseJudgmentWorkflowStatus.CLERK_DRAFT);
         row = caseJudgmentWorkflowRepository.save(row);
-        return toJudgmentWorkflowResponse(caseRow, row);
+        recordJudgmentHistory(caseRow, row, from, row.getStatus(), WorkflowAction.REVERT_JUDGMENT_TO_CLERK,
+                row.getDraftSummary(), remarks, "PRESIDING_OFFICER", login);
+        return enrichJudgmentResponse(caseRow, row, posting);
+    }
+
+    @Transactional(readOnly = true)
+    public List<com.maharashtra.rccms.dto.workflow.JudgmentWorkflowHistoryResponse> listJudgmentHistory(
+            Long caseId,
+            Principal principal
+    ) {
+        String login = normalizeLogin(principal);
+        resolveOfficerCase(caseId, login);
+        return judgmentWorkflowHistoryService.listForCase(caseId);
     }
 
     @Transactional
     public CaseJudgmentResponse publishJudgment(Long caseId, Principal principal) {
+        return publishJudgmentInternal(caseId, null, principal, WorkflowAction.PUBLISH_JUDGMENT);
+    }
+
+    /**
+     * PO signs and publishes judgment (disposes case). From PO_SCRUTINY auto-finalizes first.
+     */
+    @Transactional
+    public CaseJudgmentResponse signAndPublishJudgment(
+            Long caseId,
+            CaseJudgmentSignPublishRequest request,
+            Principal principal
+    ) {
+        if (request == null || trimToNull(request.getDigitalSignatureRef()) == null) {
+            throw new IllegalArgumentException("digitalSignatureRef is required.");
+        }
+        return publishJudgmentInternal(
+                caseId,
+                request,
+                principal,
+                WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT
+        );
+    }
+
+    private CaseJudgmentResponse publishJudgmentInternal(
+            Long caseId,
+            CaseJudgmentSignPublishRequest request,
+            Principal principal,
+            WorkflowAction action
+    ) {
         String login = normalizeLogin(principal);
         EmployeePosting posting = resolveOfficerPosting(login);
         assertPo(posting);
         CaseRegistry caseRow = resolveOfficerCase(caseId, login);
+        assertNotDisposed(caseRow);
 
         CaseJudgmentWorkflow row = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("Judgment workflow not found."));
-        if (row.getStatus() != CaseJudgmentWorkflowStatus.PO_FINALIZED) {
-            throw new IllegalArgumentException("Only PO finalized judgment can be published.");
-        }
-        String summary = trimToNull(row.getFinalSummary());
-        if (summary == null) {
-            throw new IllegalArgumentException("Final judgment summary is missing.");
+        requireCaseAction(caseRow, posting, null, null,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                row,
+                action);
+
+        if (row.getStatus() == CaseJudgmentWorkflowStatus.PO_SCRUTINY) {
+            if (action != WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT) {
+                throw new IllegalArgumentException("Only sign-and-publish is allowed from PO scrutiny without separate finalize.");
+            }
+            String summary = request != null ? request.resolveSummary() : null;
+            if (trimToNull(summary) == null) {
+                summary = trimToNull(row.getDraftSummary());
+            }
+            if (trimToNull(summary) == null) {
+                throw new IllegalArgumentException("Judgment summary is missing; cannot sign and publish.");
+            }
+            CaseJudgmentWorkflowStatus fromScrutiny = row.getStatus();
+            row.setFinalSummary(summary.trim());
+            row.setFinalizedByLoginId(login);
+            row.setStatus(CaseJudgmentWorkflowStatus.PO_FINALIZED);
+            row = caseJudgmentWorkflowRepository.save(row);
+            recordJudgmentHistory(caseRow, row, fromScrutiny, row.getStatus(), WorkflowAction.FINALIZE_JUDGMENT,
+                    summary, request != null ? request.getRemarks() : null, "PRESIDING_OFFICER", login);
+        } else if (row.getStatus() != CaseJudgmentWorkflowStatus.PO_FINALIZED) {
+            throw new IllegalArgumentException(
+                    "Judgment must be under PO scrutiny or PO finalized before publish/sign."
+            );
         }
 
+        String summary = request != null ? request.resolveSummary() : null;
+        if (trimToNull(summary) == null) {
+            summary = trimToNull(row.getFinalSummary());
+        }
+        if (trimToNull(summary) == null) {
+            summary = trimToNull(row.getDraftSummary());
+        }
+        if (trimToNull(summary) == null) {
+            throw new IllegalArgumentException("Final judgment summary is missing.");
+        }
+        summary = summary.trim();
+
+        String signatureRef = request != null ? trimToNull(request.getDigitalSignatureRef()) : null;
+        if (action == WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT && signatureRef == null) {
+            throw new IllegalArgumentException("digitalSignatureRef is required.");
+        }
+        if (signatureRef == null) {
+            signatureRef = "PO-JUDGMENT-" + caseId + "-" + System.currentTimeMillis();
+        }
+
+        CaseJudgmentWorkflowStatus from = row.getStatus();
+        row.setFinalSummary(summary);
         row.setPublishedSummary(summary);
         row.setPublishedByLoginId(login);
         row.setPublishedAt(Instant.now());
+        row.setDigitalSignatureRef(signatureRef);
         row.setStatus(CaseJudgmentWorkflowStatus.PUBLISHED);
         caseJudgmentWorkflowRepository.save(row);
+        recordJudgmentHistory(caseRow, row, from, row.getStatus(), action,
+                summary, request != null ? request.getRemarks() : null, "PRESIDING_OFFICER", login);
 
         caseRow.setStatus("DISPOSED");
         caseRow.setDisposedAt(Instant.now());
@@ -488,8 +755,13 @@ public class CaseProceedingService {
         out.setCaseId(caseRow.getId());
         out.setCaseNo(caseRow.getCaseNo());
         out.setStatus(caseRow.getStatus());
+        out.setWorkflowStatus(CaseJudgmentWorkflowStatus.PUBLISHED.name());
+        out.setJudgmentSummary(summary);
+        out.setDigitalSignatureRef(signatureRef);
         out.setDisposedAt(caseRow.getDisposedAt());
-        out.setMessage("Judgment published and case disposed.");
+        out.setMessage(action == WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT
+                ? "Judgment signed, published, and case disposed."
+                : "Judgment published and case disposed.");
         return out;
     }
 
@@ -499,29 +771,76 @@ public class CaseProceedingService {
             throw new IllegalArgumentException("hearingDate is required.");
         }
         String login = normalizeLogin(principal);
+        EmployeePosting posting = resolveOfficerPosting(login);
         CaseRegistry caseRow = resolveOfficerCase(caseId, login);
         assertNotDisposed(caseRow);
+        requireCaseAction(caseRow, posting, null, null,
+                caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
+                caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null),
+                WorkflowAction.SCHEDULE_HEARING);
 
-        Integer nextHearingNo = caseHearingRepository.findFirstByCaseRegistryIdOrderByHearingNoDesc(caseId)
-                .map(CaseHearing::getHearingNo)
-                .map(x -> x + 1)
-                .orElse(1);
-
-        CaseHearing row = new CaseHearing();
-        row.setCaseRegistry(caseRow);
-        row.setHearingNo(nextHearingNo);
-        row.setHearingDate(request.getHearingDate());
-        row.setStatus("SCHEDULED");
-        row.setNoticeGenerated(Boolean.TRUE.equals(request.getNoticeGenerate()));
-        row.setRemarks(trimToNull(request.getRemarks()));
-        row.setCreatedByLoginId(login);
-        row = caseHearingRepository.save(row);
-
+        CaseHearing row = createNextScheduledHearing(
+                caseRow,
+                request.getHearingDate(),
+                Boolean.TRUE.equals(request.getNoticeGenerate()),
+                trimToNull(request.getRemarks()),
+                login
+        );
         if (!"HEARING_SCHEDULED".equalsIgnoreCase(caseRow.getStatus())) {
             caseRow.setStatus("HEARING_SCHEDULED");
             caseRegistryRepository.save(caseRow);
         }
         return toHearingResponse(row);
+    }
+
+    /**
+     * After roznamma sign with outcome ADJOURN, schedule the next hearing (if nextHearingDate was not sent on sign).
+     */
+    @Transactional
+    public CaseHearingResponse rescheduleHearingAfterAdjourn(
+            Long caseId,
+            Long hearingId,
+            CaseHearingRescheduleRequest request,
+            Principal principal
+    ) {
+        if (request == null || request.getNextHearingDate() == null) {
+            throw new IllegalArgumentException("nextHearingDate is required.");
+        }
+        String login = normalizeLogin(principal);
+        EmployeePosting posting = resolveOfficerPosting(login);
+        assertPo(posting);
+        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
+        assertNotDisposed(caseRow);
+
+        CaseHearing completedHearing = caseHearingRepository.findById(hearingId)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid hearingId."));
+        if (!Objects.equals(completedHearing.getCaseRegistry().getId(), caseId)) {
+            throw new IllegalArgumentException("hearingId does not belong to case.");
+        }
+        if (!"COMPLETED".equalsIgnoreCase(trimToNull(completedHearing.getStatus()))) {
+            throw new IllegalArgumentException("Only a completed hearing can be adjourned to a new date.");
+        }
+        if (!hasSignedAdjournRoznammaForHearing(caseId, hearingId)) {
+            throw new IllegalArgumentException(
+                    "Roznamma must be signed with outcome ADJOURN for this hearing before scheduling the next date."
+            );
+        }
+
+        CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null);
+        requireCaseAction(caseRow, posting, completedHearing, null, sheet,
+                caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null),
+                WorkflowAction.RESCHEDULE_HEARING);
+
+        CaseHearing next = createNextScheduledHearing(
+                caseRow,
+                request.getNextHearingDate(),
+                request.getNoticeGenerate() == null || Boolean.TRUE.equals(request.getNoticeGenerate()),
+                trimToNull(request.getRemarks()),
+                login
+        );
+        caseRow.setStatus("HEARING_SCHEDULED");
+        caseRegistryRepository.save(caseRow);
+        return toHearingResponse(next);
     }
 
     @Transactional(readOnly = true)
@@ -550,12 +869,23 @@ public class CaseProceedingService {
     }
 
     @Transactional
-    public CaseOrderSheetResponse upsertOrderSheet(Long caseId, CaseOrderSheetUpsertRequest request, Principal principal) {
+    private CaseOrderSheetResponse upsertOrderSheet(Long caseId, CaseOrderSheetUpsertRequest request, Principal principal) {
+        return upsertOrderSheet(caseId, request, principal, false);
+    }
+
+    @Transactional
+    private CaseOrderSheetResponse upsertOrderSheet(
+            Long caseId,
+            CaseOrderSheetUpsertRequest request,
+            Principal principal,
+            boolean oneShotComplete
+    ) {
         if (request == null || trimToNull(request.getContent()) == null) {
             throw new IllegalArgumentException("content is required.");
         }
         String login = normalizeLogin(principal);
         EmployeePosting posting = resolveOfficerPosting(login);
+        assertPo(posting);
         CaseRegistry caseRow = resolveOfficerCase(caseId, login);
         assertNotDisposed(caseRow);
 
@@ -566,21 +896,41 @@ public class CaseProceedingService {
                 request.getHearingDate(),
                 targetHearingDate
         );
+        assertNoticeServedForProceeding(hearing);
+        CaseOrderSheet existingSheet = caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null);
+        WorkflowAction roznamaAction = existingSheet != null && isProceedingDraftStatus(existingSheet.getStatus())
+                ? WorkflowAction.UPDATE_ROZNAMA
+                : WorkflowAction.DRAFT_ROZNAMA;
+        if (!oneShotComplete) {
+            requireCaseAction(caseRow, posting, hearing, null, existingSheet,
+                    caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null),
+                    roznamaAction);
+        }
 
         CaseOrderSheet sheet = resolveOrCreateOrderSheet(caseRow);
         prepareSheetForHearingDraft(sheet, hearing, login);
-        if (sheet.getStatus() != null && sheet.getStatus() != CaseOrderSheetStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException("Roznama can be edited only in draft stage.");
+        if (sheet.getStatus() != null && !isProceedingDraftStatus(sheet.getStatus())) {
+            throw new IllegalArgumentException("Proceeding can be edited only in PO draft stage.");
         }
-        sheet.setDraftContent(request.getContent().trim());
+        List<CaseHearing> hearings = caseHearingRepository.findByCaseRegistryIdOrderByHearingNoAsc(caseId);
+        List<CaseOrderSheetHistory> histories =
+                caseOrderSheetHistoryRepository.findByCaseRegistryIdOrderByCreatedAtDesc(caseId);
+        List<RoznamaTableEntryResponse> existingRows =
+                RoznamaContentHelper.buildTableRows(hearings, hearing, sheet, histories);
+        String mergedContent = RoznamaContentHelper.mergeSaveContent(
+                request.getContent().trim(),
+                existingRows,
+                hearing
+        );
+        sheet.setDraftContent(mergedContent);
         sheet.setFinalContent(null);
         sheet.setDigitalSignatureRef(null);
-        sheet.setStatus(CaseOrderSheetStatus.CLERK_DRAFT);
+        sheet.setStatus(CaseOrderSheetStatus.PO_DRAFT);
         sheet.setDraftedByLoginId(login);
         sheet.setPoFinalizedByLoginId(null);
         sheet.setPoSignedByLoginId(null);
         sheet.setCurrentHearing(hearing);
-        sheet.setContent(sheet.getDraftContent());
+        sheet.setContent(mergedContent);
         sheet.setUpdatedByLoginId(login);
         sheet = caseOrderSheetRepository.save(sheet);
 
@@ -588,7 +938,7 @@ public class CaseProceedingService {
         hist.setCaseRegistry(caseRow);
         hist.setCaseHearing(hearing);
         hist.setContent(sheet.getDraftContent());
-        hist.setRemarks(withStage(isPo(posting) ? "PO_DRAFT" : "CLERK_DRAFT", request.getRemarks()));
+        hist.setRemarks(withStage("PO_DRAFT", request.getRemarks()));
         hist.setCreatedByLoginId(login);
         caseOrderSheetHistoryRepository.save(hist);
 
@@ -596,34 +946,17 @@ public class CaseProceedingService {
     }
 
     @Transactional
-    public CaseOrderSheetResponse submitOrderSheetToPo(Long caseId, Principal principal) {
-        String login = normalizeLogin(principal);
-        EmployeePosting posting = resolveOfficerPosting(login);
-        assertClerk(posting);
-        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
-        assertNotDisposed(caseRow);
-
-        CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Order sheet draft not found."));
-        if (sheet.getStatus() != CaseOrderSheetStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException("Only clerk draft order sheet can be submitted to PO scrutiny.");
-        }
-        sheet.setStatus(CaseOrderSheetStatus.PO_SCRUTINY);
-        sheet.setUpdatedByLoginId(login);
-        sheet = caseOrderSheetRepository.save(sheet);
-
-        CaseOrderSheetHistory hist = new CaseOrderSheetHistory();
-        hist.setCaseRegistry(caseRow);
-        hist.setCaseHearing(sheet.getCurrentHearing());
-        hist.setContent(sheet.getDraftContent() != null ? sheet.getDraftContent() : sheet.getContent());
-        hist.setRemarks(withStage("PO_SCRUTINY", null));
-        hist.setCreatedByLoginId(login);
-        caseOrderSheetHistoryRepository.save(hist);
-        return toOrderSheetResponse(sheet);
+    private CaseOrderSheetResponse finalizeOrderSheet(Long caseId, CaseOrderSheetFinalizeRequest request, Principal principal) {
+        return finalizeOrderSheet(caseId, request, principal, false);
     }
 
     @Transactional
-    public CaseOrderSheetResponse finalizeOrderSheet(Long caseId, CaseOrderSheetFinalizeRequest request, Principal principal) {
+    private CaseOrderSheetResponse finalizeOrderSheet(
+            Long caseId,
+            CaseOrderSheetFinalizeRequest request,
+            Principal principal,
+            boolean oneShotComplete
+    ) {
         String login = normalizeLogin(principal);
         EmployeePosting posting = resolveOfficerPosting(login);
         assertPo(posting);
@@ -631,8 +964,13 @@ public class CaseProceedingService {
         assertNotDisposed(caseRow);
         CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("Order sheet draft not found."));
-        if (sheet.getStatus() != CaseOrderSheetStatus.PO_SCRUTINY) {
-            throw new IllegalArgumentException("Only order sheet under PO scrutiny can be finalized.");
+        if (!oneShotComplete) {
+            requireCaseAction(caseRow, posting, sheet.getCurrentHearing(), null, sheet,
+                    caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null),
+                    WorkflowAction.FINALIZE_ROZNAMA);
+        }
+        if (!isProceedingDraftStatus(sheet.getStatus()) && sheet.getStatus() != CaseOrderSheetStatus.PO_SCRUTINY) {
+            throw new IllegalArgumentException("Only PO draft proceeding can be finalized.");
         }
         String content = request != null ? trimToNull(request.getFinalContent()) : null;
         if (content == null) {
@@ -646,6 +984,13 @@ public class CaseProceedingService {
         }
         sheet.setFinalContent(content);
         sheet.setContent(sheet.getFinalContent());
+        HearingOutcome finalizeOutcome = parseHearingOutcome(
+                request != null ? request.getHearingOutcome() : null,
+                false
+        );
+        if (finalizeOutcome != null) {
+            sheet.setHearingOutcome(finalizeOutcome);
+        }
         sheet.setStatus(CaseOrderSheetStatus.PO_FINALIZED);
         sheet.setPoFinalizedByLoginId(login);
         sheet.setUpdatedByLoginId(login);
@@ -662,7 +1007,17 @@ public class CaseProceedingService {
     }
 
     @Transactional
-    public CaseOrderSheetResponse signOrderSheet(Long caseId, CaseOrderSheetSignRequest request, Principal principal) {
+    private CaseOrderSheetResponse signOrderSheet(Long caseId, CaseOrderSheetSignRequest request, Principal principal) {
+        return signOrderSheet(caseId, request, principal, false);
+    }
+
+    @Transactional
+    private CaseOrderSheetResponse signOrderSheet(
+            Long caseId,
+            CaseOrderSheetSignRequest request,
+            Principal principal,
+            boolean oneShotComplete
+    ) {
         if (request == null || trimToNull(request.getDigitalSignatureRef()) == null) {
             throw new IllegalArgumentException("digitalSignatureRef is required.");
         }
@@ -673,7 +1028,13 @@ public class CaseProceedingService {
         assertNotDisposed(caseRow);
         CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("Order sheet not found."));
-        if (sheet.getStatus() == CaseOrderSheetStatus.PO_SCRUTINY) {
+        if (!oneShotComplete) {
+            requireCaseAction(caseRow, posting, sheet.getCurrentHearing(), null, sheet,
+                    caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null),
+                    WorkflowAction.SIGN_ROZNAMA);
+        }
+        if (sheet.getStatus() == CaseOrderSheetStatus.PO_SCRUTINY
+                || isProceedingDraftStatus(sheet.getStatus())) {
             String finalText = trimToNull(sheet.getFinalContent());
             if (finalText == null) {
                 finalText = trimToNull(sheet.getDraftContent());
@@ -682,7 +1043,7 @@ public class CaseProceedingService {
                 finalText = trimToNull(sheet.getContent());
             }
             if (finalText == null) {
-                throw new IllegalArgumentException("Roznama content is required before sign.");
+                throw new IllegalArgumentException("Proceeding content is required before sign.");
             }
             sheet.setFinalContent(finalText);
             sheet.setContent(finalText);
@@ -690,18 +1051,23 @@ public class CaseProceedingService {
             sheet.setPoFinalizedByLoginId(login);
         }
         if (sheet.getStatus() != CaseOrderSheetStatus.PO_FINALIZED) {
-            throw new IllegalArgumentException("Only PO finalized roznama can be signed.");
+            throw new IllegalArgumentException("Only PO finalized proceeding can be signed.");
         }
+        HearingOutcome outcome = parseHearingOutcome(request.getHearingOutcome(), true);
+        sheet.setHearingOutcome(outcome);
         sheet.setDigitalSignatureRef(request.getDigitalSignatureRef().trim());
         sheet.setStatus(CaseOrderSheetStatus.PO_SIGNED);
         sheet.setPoSignedByLoginId(login);
         sheet.setUpdatedByLoginId(login);
-        sheet = caseOrderSheetRepository.save(sheet);
 
-        if (sheet.getCurrentHearing() != null && !"COMPLETED".equalsIgnoreCase(sheet.getCurrentHearing().getStatus())) {
-            sheet.getCurrentHearing().setStatus("COMPLETED");
-            caseHearingRepository.save(sheet.getCurrentHearing());
-        }
+        CaseHearing nextHearing = applyHearingOutcomeAfterRoznammaSign(
+                caseRow,
+                sheet,
+                outcome,
+                request.getNextHearingDate(),
+                login
+        );
+        sheet = caseOrderSheetRepository.save(sheet);
 
         CaseOrderSheetHistory hist = new CaseOrderSheetHistory();
         hist.setCaseRegistry(caseRow);
@@ -710,58 +1076,23 @@ public class CaseProceedingService {
         hist.setRemarks(withStage("PO_SIGNED", request.getRemarks()));
         hist.setCreatedByLoginId(login);
         caseOrderSheetHistoryRepository.save(hist);
-        return toOrderSheetResponse(sheet);
-    }
 
-    @Transactional
-    public CaseOrderSheetResponse revertOrderSheetToClerk(Long caseId, CaseWorkflowRevertRequest request, Principal principal) {
-        String remarks = requiredText(request != null ? request.getRemarks() : null, "remarks");
-        String login = normalizeLogin(principal);
-        EmployeePosting posting = resolveOfficerPosting(login);
-        assertPo(posting);
-        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
-        assertNotDisposed(caseRow);
-        CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Order sheet not found."));
-        if (sheet.getStatus() == CaseOrderSheetStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException("Order sheet is still in clerk draft. Submit to PO scrutiny before revert.");
+        CaseOrderSheetResponse response = toOrderSheetResponse(sheet);
+        response.setCaseStatus(caseRow.getStatus());
+        if (nextHearing != null) {
+            response.setMessage(
+                    "Roznamma signed. Next hearing #" + nextHearing.getHearingNo()
+                            + " scheduled on " + nextHearing.getHearingDate()
+                            + ". Serve notice to parties."
+            );
+        } else if (outcome == HearingOutcome.FINAL) {
+            response.setMessage("Roznamma signed. This was the final hearing — proceed to judgment.");
+        } else {
+            response.setMessage(
+                    "Roznamma signed with adjournment. Schedule next hearing date using reschedule API."
+            );
         }
-        if (trimToNull(sheet.getFinalContent()) != null) {
-            sheet.setDraftContent(sheet.getFinalContent().trim());
-        } else if (trimToNull(sheet.getContent()) != null) {
-            sheet.setDraftContent(sheet.getContent().trim());
-        }
-        sheet.setFinalContent(null);
-        sheet.setDigitalSignatureRef(null);
-        sheet.setPoFinalizedByLoginId(null);
-        sheet.setPoSignedByLoginId(null);
-        sheet.setStatus(CaseOrderSheetStatus.CLERK_DRAFT);
-        sheet.setContent(sheet.getDraftContent());
-        sheet.setUpdatedByLoginId(login);
-        sheet = caseOrderSheetRepository.save(sheet);
-
-        CaseOrderSheetHistory hist = new CaseOrderSheetHistory();
-        hist.setCaseRegistry(caseRow);
-        hist.setCaseHearing(sheet.getCurrentHearing());
-        hist.setContent(sheet.getDraftContent() != null ? sheet.getDraftContent() : "");
-        hist.setRemarks(withStage("PO_REVERTED_TO_CLERK", remarks));
-        hist.setCreatedByLoginId(login);
-        caseOrderSheetHistoryRepository.save(hist);
-        return toOrderSheetResponse(sheet);
-    }
-
-    @Transactional(readOnly = true)
-    public CaseOrderSheetResponse getOrderSheet(Long caseId, Principal principal) {
-        String login = normalizeLogin(principal);
-        resolveOfficerCase(caseId, login);
-        CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Order sheet not found."));
-        return toOrderSheetResponse(sheet);
-    }
-
-    @Transactional(readOnly = true)
-    public List<CaseOrderSheetHistoryResponse> getOrderSheetHistory(Long caseId, Principal principal) {
-        return getRoznamaHistory(caseId, null, principal);
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -773,94 +1104,206 @@ public class CaseProceedingService {
         CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null);
         List<CaseOrderSheetHistory> histories = caseOrderSheetHistoryRepository.findByCaseRegistryIdOrderByCreatedAtDesc(caseId);
         RoznamaHearingView view = resolveRoznamaViewForHearing(sheet, histories, hearing);
+        RoznamaResponse out;
         if (view.linkedToHearing && sheet != null) {
-            RoznamaResponse out = toRoznamaResponse(toOrderSheetResponse(sheet));
+            out = toRoznamaResponse(toOrderSheetResponse(sheet));
             out.setHearingId(hearing.getId());
-            return out;
+        } else {
+            out = new RoznamaResponse();
+            out.setCaseId(caseRow.getId());
+            out.setCaseNo(caseRow.getCaseNo());
+            out.setHearingId(hearing.getId());
+            out.setId(view.roznamaId);
+            out.setStatus(view.roznamaStatus);
+            out.setDraftContent(view.draftContent);
+            out.setFinalContent(view.finalContent);
+            out.setContent(view.finalContent != null ? view.finalContent : view.draftContent);
+            out.setUpdatedAt(view.updatedAt);
         }
-        RoznamaResponse out = new RoznamaResponse();
-        out.setCaseId(caseRow.getId());
-        out.setCaseNo(caseRow.getCaseNo());
-        out.setHearingId(hearing.getId());
-        out.setId(view.roznamaId);
-        out.setStatus(view.roznamaStatus);
-        out.setDraftContent(view.draftContent);
-        out.setFinalContent(view.finalContent);
-        out.setContent(view.finalContent != null ? view.finalContent : view.draftContent);
-        out.setUpdatedAt(view.updatedAt);
+        enrichRoznamaTable(out, caseId, hearing, sheet, histories);
+        caseHearingAttendanceService.enrichRoznamaResponse(out, caseRow, hearing);
         return out;
     }
 
-    @Transactional
-    public RoznamaResponse draftRoznama(Long caseId, CaseOrderSheetUpsertRequest request, Principal principal) {
-        return toRoznamaResponse(upsertOrderSheet(caseId, request, principal));
+    @Transactional(readOnly = true)
+    public HearingAttendanceResponse getHearingAttendance(Long caseId, Long hearingId, Principal principal) {
+        if (hearingId == null) {
+            throw new IllegalArgumentException("hearingId is required.");
+        }
+        String login = normalizeLogin(principal);
+        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
+        CaseHearing hearing = caseHearingRepository.findById(hearingId)
+                .orElseThrow(() -> new IllegalArgumentException("Hearing not found."));
+        if (!Objects.equals(hearing.getCaseRegistry().getId(), caseRow.getId())) {
+            throw new IllegalArgumentException("Hearing does not belong to this case.");
+        }
+        assertNoticeServedForProceeding(hearing);
+        return caseHearingAttendanceService.getAttendance(caseRow, hearing);
     }
 
     @Transactional
-    public RoznamaResponse finalizeRoznama(
+    public HearingAttendanceResponse saveHearingAttendance(
             Long caseId,
-            Long roznamaId,
             Long hearingId,
-            LocalDate hearingDate,
-            CaseOrderSheetFinalizeRequest request,
+            HearingAttendanceSaveRequest request,
             Principal principal
     ) {
-        String login = normalizeLogin(principal);
-        if (roznamaId != null) {
-            resolveRoznama(caseId, roznamaId, login);
+        if (hearingId == null) {
+            throw new IllegalArgumentException("hearingId is required.");
         }
-        ensureRoznamaHearingContext(caseId, hearingId, hearingDate, login);
-        return toRoznamaResponse(finalizeOrderSheet(caseId, request, principal));
+        String login = normalizeLogin(principal);
+        EmployeePosting posting = resolveOfficerPosting(login);
+        assertPo(posting);
+        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
+        assertNotDisposed(caseRow);
+        CaseHearing hearing = caseHearingRepository.findById(hearingId)
+                .orElseThrow(() -> new IllegalArgumentException("Hearing not found."));
+        if (!Objects.equals(hearing.getCaseRegistry().getId(), caseRow.getId())) {
+            throw new IllegalArgumentException("Hearing does not belong to this case.");
+        }
+        assertNoticeServedForProceeding(hearing);
+        return caseHearingAttendanceService.saveAttendance(caseRow, hearing, request, login);
     }
 
+    /**
+     * One-shot: save roznamma content, finalize, sign, and apply hearing outcome (ADJOURN or FINAL).
+     */
     @Transactional
-    public RoznamaResponse submitRoznamaToPo(
+    public CaseRoznamaCompleteResponse completeRoznama(
             Long caseId,
-            Long roznamaId,
-            Long hearingId,
-            LocalDate hearingDate,
+            CaseRoznamaCompleteRequest request,
             Principal principal
     ) {
-        String login = normalizeLogin(principal);
-        if (roznamaId != null) {
-            resolveRoznama(caseId, roznamaId, login);
+        if (request == null || request.getHearingId() == null) {
+            throw new IllegalArgumentException("hearingId is required.");
         }
-        ensureRoznamaHearingContext(caseId, hearingId, hearingDate, login);
-        return toRoznamaResponse(submitOrderSheetToPo(caseId, principal));
+        if (trimToNull(request.getContent()) == null) {
+            throw new IllegalArgumentException("content is required.");
+        }
+        HearingOutcome outcome = parseHearingOutcome(request.getHearingOutcome(), true);
+
+        String login = normalizeLogin(principal);
+        EmployeePosting posting = resolveOfficerPosting(login);
+        assertPo(posting);
+        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
+        assertNotDisposed(caseRow);
+
+        CaseHearing hearing = caseHearingRepository.findById(request.getHearingId())
+                .orElseThrow(() -> new IllegalArgumentException("Hearing not found."));
+        if (!Objects.equals(hearing.getCaseRegistry().getId(), caseRow.getId())) {
+            throw new IllegalArgumentException("Hearing does not belong to this case.");
+        }
+        caseHearingAttendanceService.saveAttendanceIfProvided(
+                caseRow, hearing, request.getAttendance(), login
+        );
+        caseHearingAttendanceService.assertAttendanceCompleteIfRequired(caseRow, hearing);
+
+        CaseOrderSheet existingSheet = caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null);
+        requireCaseAction(caseRow, posting, hearing, null, existingSheet,
+                caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElse(null),
+                WorkflowAction.COMPLETE_ROZNAMA);
+
+        CaseOrderSheetUpsertRequest draftRequest = new CaseOrderSheetUpsertRequest();
+        draftRequest.setHearingId(request.getHearingId());
+        draftRequest.setHearingDate(request.getHearingDate());
+        draftRequest.setContent(request.getContent().trim());
+        draftRequest.setRemarks(request.getRemarks());
+        upsertOrderSheet(caseId, draftRequest, principal, true);
+
+        CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("Roznamma not found. Save draft first."));
+
+        if (sheet.getStatus() == CaseOrderSheetStatus.PO_SIGNED
+                && sheet.getHearingOutcome() != null
+                && sheet.getCurrentHearing() != null
+                && Objects.equals(sheet.getCurrentHearing().getId(), request.getHearingId())) {
+            throw new IllegalArgumentException("Roznamma is already signed for this hearing.");
+        }
+
+        boolean roznamaFinalized = false;
+        boolean roznamaSigned = false;
+
+        if (isProceedingDraftStatus(sheet.getStatus()) || sheet.getStatus() == CaseOrderSheetStatus.PO_SCRUTINY) {
+            String contentForFinalize = firstNonBlankContent(
+                    sheet.getDraftContent(),
+                    sheet.getContent(),
+                    request.getContent()
+            );
+            CaseOrderSheetFinalizeRequest finalizeRequest = new CaseOrderSheetFinalizeRequest();
+            finalizeRequest.setFinalContent(contentForFinalize);
+            finalizeRequest.setHearingOutcome(request.getHearingOutcome());
+            finalizeRequest.setRemarks(request.getRemarks());
+            finalizeOrderSheet(caseId, finalizeRequest, principal, true);
+            roznamaFinalized = true;
+            sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
+                    .orElseThrow(() -> new IllegalArgumentException("Roznamma not found after finalize."));
+        } else if (sheet.getStatus() == CaseOrderSheetStatus.PO_FINALIZED) {
+            roznamaFinalized = true;
+        }
+
+        if (sheet.getStatus() != CaseOrderSheetStatus.PO_SIGNED) {
+            CaseOrderSheetSignRequest signRequest = new CaseOrderSheetSignRequest();
+            String sigRef = trimToNull(request.getDigitalSignatureRef());
+            if (sigRef == null) {
+                sigRef = "PO-ROZNAMA-" + caseId + "-" + request.getHearingId() + "-" + System.currentTimeMillis();
+            }
+            signRequest.setDigitalSignatureRef(sigRef);
+            signRequest.setHearingOutcome(request.getHearingOutcome());
+            signRequest.setNextHearingDate(request.getNextHearingDate());
+            signRequest.setRemarks(request.getRemarks());
+            CaseOrderSheetResponse signed = signOrderSheet(caseId, signRequest, principal, true);
+            roznamaSigned = true;
+            return buildRoznamaCompleteResponse(caseId, request.getHearingId(), signed, outcome, roznamaFinalized, roznamaSigned);
+        }
+
+        CaseOrderSheetResponse existing = toOrderSheetResponse(sheet);
+        existing.setCaseStatus(caseRow.getStatus());
+        existing.setMessage("Roznamma was already signed for this hearing.");
+        return buildRoznamaCompleteResponse(caseId, request.getHearingId(), existing, outcome, roznamaFinalized, true);
     }
 
-    @Transactional
-    public RoznamaResponse signRoznama(
+    private CaseRoznamaCompleteResponse buildRoznamaCompleteResponse(
             Long caseId,
-            Long roznamaId,
             Long hearingId,
-            LocalDate hearingDate,
-            CaseOrderSheetSignRequest request,
-            Principal principal
+            CaseOrderSheetResponse sheet,
+            HearingOutcome outcome,
+            boolean roznamaFinalized,
+            boolean roznamaSigned
     ) {
-        String login = normalizeLogin(principal);
-        if (roznamaId != null) {
-            resolveRoznama(caseId, roznamaId, login);
-        }
-        ensureRoznamaHearingContext(caseId, hearingId, hearingDate, login);
-        return toRoznamaResponse(signOrderSheet(caseId, request, principal));
-    }
+        CaseRoznamaCompleteResponse out = new CaseRoznamaCompleteResponse();
+        out.setCaseId(caseId);
+        out.setRoznamaId(sheet.getId());
+        out.setHearingId(hearingId != null ? hearingId : sheet.getCurrentHearingId());
+        out.setStatus(sheet.getStatus());
+        out.setHearingOutcome(outcome.name());
+        out.setCaseStatus(sheet.getCaseStatus());
+        out.setMessage(sheet.getMessage());
+        out.setRoznamaFinalized(roznamaFinalized);
+        out.setRoznamaSigned(roznamaSigned);
+        out.setDigitalSignatureRef(sheet.getDigitalSignatureRef());
+        out.setUpdatedAt(sheet.getUpdatedAt());
 
-    @Transactional
-    public RoznamaResponse revertRoznamaToClerk(
-            Long caseId,
-            Long roznamaId,
-            Long hearingId,
-            LocalDate hearingDate,
-            CaseWorkflowRevertRequest request,
-            Principal principal
-    ) {
-        String login = normalizeLogin(principal);
-        if (roznamaId != null) {
-            resolveRoznama(caseId, roznamaId, login);
+        caseHearingRepository.findById(out.getHearingId()).ifPresent(hearing -> {
+            out.setFinalHearing(Boolean.TRUE.equals(hearing.getFinalHearing()));
+        });
+        if (outcome == HearingOutcome.ADJOURN && "HEARING_SCHEDULED".equalsIgnoreCase(sheet.getCaseStatus())) {
+            caseHearingRepository.findFirstByCaseRegistryIdOrderByHearingNoDesc(caseId).ifPresent(next -> {
+                if (!Objects.equals(next.getId(), out.getHearingId())) {
+                    out.setNextHearingId(next.getId());
+                    out.setNextHearingDate(next.getHearingDate());
+                }
+            });
         }
-        ensureRoznamaHearingContext(caseId, hearingId, hearingDate, login);
-        return toRoznamaResponse(revertOrderSheetToClerk(caseId, request, principal));
+        if (out.getMessage() == null) {
+            if (outcome == HearingOutcome.FINAL) {
+                out.setMessage("Roznamma finalized, signed. Proceed to judgment.");
+            } else if (out.getNextHearingId() != null) {
+                out.setMessage("Roznamma finalized, signed. Next hearing scheduled — serve notice to parties.");
+            } else {
+                out.setMessage("Roznamma finalized, signed with adjournment. Schedule next hearing date if not set.");
+            }
+        }
+        return out;
     }
 
     @Transactional(readOnly = true)
@@ -877,50 +1320,6 @@ public class CaseProceedingService {
             }
             out.add(toOrderSheetHistoryResponse(row));
         }
-        return out;
-    }
-
-    @Transactional
-    public CaseJudgmentResponse passFinalJudgment(Long caseId, CaseJudgmentRequest request, Principal principal) {
-        if (request == null || trimToNull(request.getJudgmentSummary()) == null) {
-            throw new IllegalArgumentException("judgmentSummary is required.");
-        }
-        String login = normalizeLogin(principal);
-        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
-        if ("DISPOSED".equalsIgnoreCase(caseRow.getStatus())) {
-            CaseJudgmentResponse existing = new CaseJudgmentResponse();
-            existing.setCaseId(caseRow.getId());
-            existing.setCaseNo(caseRow.getCaseNo());
-            existing.setStatus(caseRow.getStatus());
-            existing.setDisposedAt(caseRow.getDisposedAt());
-            existing.setMessage("Case already disposed.");
-            return existing;
-        }
-
-        caseRow.setStatus("DISPOSED");
-        caseRow.setDisposedAt(Instant.now());
-        caseRow.setDisposedByOfficerLoginId(login);
-        caseRow.setJudgmentSummary(request.getJudgmentSummary().trim());
-        caseRegistryRepository.save(caseRow);
-
-        CaseJudgmentWorkflow wf = caseJudgmentWorkflowRepository.findByCaseRegistryId(caseId).orElseGet(CaseJudgmentWorkflow::new);
-        if (wf.getCaseRegistry() == null) {
-            wf.setCaseRegistry(caseRow);
-        }
-        wf.setFinalSummary(request.getJudgmentSummary().trim());
-        wf.setPublishedSummary(request.getJudgmentSummary().trim());
-        wf.setFinalizedByLoginId(login);
-        wf.setPublishedByLoginId(login);
-        wf.setPublishedAt(caseRow.getDisposedAt());
-        wf.setStatus(CaseJudgmentWorkflowStatus.PUBLISHED);
-        caseJudgmentWorkflowRepository.save(wf);
-
-        CaseJudgmentResponse out = new CaseJudgmentResponse();
-        out.setCaseId(caseRow.getId());
-        out.setCaseNo(caseRow.getCaseNo());
-        out.setStatus(caseRow.getStatus());
-        out.setDisposedAt(caseRow.getDisposedAt());
-        out.setMessage("Final judgment saved and case disposed.");
         return out;
     }
 
@@ -950,11 +1349,6 @@ public class CaseProceedingService {
         if (!Objects.equals(designationId, 1L)) {
             throw new IllegalArgumentException("Only Presiding Officer can perform this action.");
         }
-    }
-
-    private static boolean isPo(EmployeePosting posting) {
-        Long designationId = posting.getDesignation() != null ? posting.getDesignation().getId() : null;
-        return Objects.equals(designationId, 1L);
     }
 
     private static void assertClerk(EmployeePosting posting) {
@@ -1000,12 +1394,58 @@ public class CaseProceedingService {
         return t.isEmpty() ? null : t;
     }
 
+    private static String firstNonBlankContent(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            String trimmed = trimToNull(value);
+            if (trimmed != null) {
+                return trimmed;
+            }
+        }
+        return null;
+    }
+
     private static String requiredText(String value, String field) {
         String t = trimToNull(value);
         if (t == null) {
             throw new IllegalArgumentException(field + " is required.");
         }
         return t;
+    }
+
+    private void requireCaseAction(
+            CaseRegistry caseRow,
+            EmployeePosting posting,
+            CaseHearing hearing,
+            CaseNotice notice,
+            CaseOrderSheet sheet,
+            CaseJudgmentWorkflow judgment,
+            WorkflowAction action
+    ) {
+        java.util.Set<WorkflowAction> allowed = new java.util.LinkedHashSet<>();
+        for (String code : workflowPolicyService.caseAllowedActions(caseRow, posting, hearing, notice, sheet, judgment)) {
+            allowed.add(WorkflowAction.valueOf(code));
+        }
+        workflowPolicyService.requireAction(action, allowed);
+    }
+
+    private void recordJudgmentHistory(
+            CaseRegistry caseRow,
+            CaseJudgmentWorkflow workflow,
+            CaseJudgmentWorkflowStatus from,
+            CaseJudgmentWorkflowStatus to,
+            WorkflowAction action,
+            String summary,
+            String remarks,
+            String role,
+            String login
+    ) {
+        if (!workflowPolicyService.definitionFor(caseRow).getJudgment().isAuditTrailRequired()) {
+            return;
+        }
+        judgmentWorkflowHistoryService.record(caseRow, workflow, from, to, action, summary, remarks, role, login);
     }
 
     private static String withStage(String stage, String remarks) {
@@ -1021,6 +1461,113 @@ public class CaseProceedingService {
         });
     }
 
+    private static void assertNoticeServedForProceeding(CaseHearing hearing) {
+        if (!Boolean.TRUE.equals(hearing.getNoticeServed())) {
+            throw new IllegalArgumentException(
+                    "Proceeding cannot start until notice is served for this hearing (hearing #"
+                            + hearing.getHearingNo() + " on " + hearing.getHearingDate() + ")."
+            );
+        }
+    }
+
+    private CaseHearing createNextScheduledHearing(
+            CaseRegistry caseRow,
+            LocalDate hearingDate,
+            boolean noticeGenerate,
+            String remarks,
+            String login
+    ) {
+        Integer nextHearingNo = caseHearingRepository.findFirstByCaseRegistryIdOrderByHearingNoDesc(caseRow.getId())
+                .map(CaseHearing::getHearingNo)
+                .map(x -> x + 1)
+                .orElse(1);
+        CaseHearing row = new CaseHearing();
+        row.setCaseRegistry(caseRow);
+        row.setHearingNo(nextHearingNo);
+        row.setHearingDate(hearingDate);
+        row.setStatus("SCHEDULED");
+        row.setNoticeGenerated(noticeGenerate);
+        row.setNoticeServed(false);
+        row.setFinalHearing(false);
+        row.setRemarks(remarks);
+        row.setCreatedByLoginId(login);
+        return caseHearingRepository.save(row);
+    }
+
+    private CaseHearing applyHearingOutcomeAfterRoznammaSign(
+            CaseRegistry caseRow,
+            CaseOrderSheet sheet,
+            HearingOutcome outcome,
+            LocalDate nextHearingDate,
+            String login
+    ) {
+        CaseHearing hearing = sheet.getCurrentHearing();
+        if (hearing == null) {
+            throw new IllegalArgumentException("Roznamma must be linked to a hearing.");
+        }
+        hearing.setStatus("COMPLETED");
+        CaseHearing nextHearing = null;
+        if (outcome == HearingOutcome.FINAL) {
+            hearing.setFinalHearing(true);
+            caseHearingRepository.save(hearing);
+            caseRow.setStatus("READY_FOR_JUDGMENT");
+            caseRegistryRepository.save(caseRow);
+        } else {
+            hearing.setFinalHearing(false);
+            caseHearingRepository.save(hearing);
+            if (nextHearingDate != null) {
+                nextHearing = createNextScheduledHearing(
+                        caseRow,
+                        nextHearingDate,
+                        true,
+                        "Adjourned from hearing #" + hearing.getHearingNo(),
+                        login
+                );
+                caseRow.setStatus("HEARING_SCHEDULED");
+                caseRegistryRepository.save(caseRow);
+            } else {
+                caseRow.setStatus("ADJOURNED");
+                caseRegistryRepository.save(caseRow);
+            }
+        }
+        return nextHearing;
+    }
+
+    private boolean hasSignedAdjournRoznammaForHearing(Long caseId, Long hearingId) {
+        CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null);
+        if (sheet != null
+                && sheet.getStatus() == CaseOrderSheetStatus.PO_SIGNED
+                && sheet.getHearingOutcome() == HearingOutcome.ADJOURN
+                && sheet.getCurrentHearing() != null
+                && Objects.equals(sheet.getCurrentHearing().getId(), hearingId)) {
+            return true;
+        }
+        for (CaseOrderSheetHistory row : caseOrderSheetHistoryRepository.findByCaseRegistryIdOrderByCreatedAtDesc(caseId)) {
+            if (row.getCaseHearing() == null || !Objects.equals(row.getCaseHearing().getId(), hearingId)) {
+                continue;
+            }
+            if ("PO_SIGNED".equals(parseHistoryStatus(row.getRemarks()))) {
+                return sheet == null || sheet.getHearingOutcome() == HearingOutcome.ADJOURN;
+            }
+        }
+        return false;
+    }
+
+    private static HearingOutcome parseHearingOutcome(String raw, boolean required) {
+        String value = trimToNull(raw);
+        if (value == null) {
+            if (required) {
+                throw new IllegalArgumentException("hearingOutcome is required (ADJOURN or FINAL).");
+            }
+            return null;
+        }
+        try {
+            return HearingOutcome.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("hearingOutcome must be ADJOURN or FINAL.");
+        }
+    }
+
     private static CaseHearingResponse toHearingResponse(CaseHearing row) {
         CaseHearingResponse out = new CaseHearingResponse();
         out.setHearingId(row.getId());
@@ -1030,47 +1577,14 @@ public class CaseProceedingService {
         out.setHearingDate(row.getHearingDate());
         out.setStatus(row.getStatus());
         out.setNoticeGenerated(row.getNoticeGenerated());
+        boolean noticeServed = Boolean.TRUE.equals(row.getNoticeServed());
+        out.setNoticeServed(noticeServed);
+        out.setProceedingAllowed(noticeServed);
+        out.setFinalHearing(Boolean.TRUE.equals(row.getFinalHearing()));
         out.setRemarks(row.getRemarks());
         out.setCreatedAt(row.getCreatedAt());
         out.setUpdatedAt(row.getUpdatedAt());
         return out;
-    }
-
-    private CaseOrderSheet resolveRoznama(Long caseId, Long roznamaId, String login) {
-        if (roznamaId == null) {
-            throw new IllegalArgumentException("roznama id is required.");
-        }
-        resolveOfficerCase(caseId, login);
-        CaseOrderSheet sheet = caseOrderSheetRepository.findById(roznamaId)
-                .orElseThrow(() -> new IllegalArgumentException("Roznama not found."));
-        if (sheet.getCaseRegistry() == null || !Objects.equals(sheet.getCaseRegistry().getId(), caseId)) {
-            throw new IllegalArgumentException("Roznama does not belong to case.");
-        }
-        return sheet;
-    }
-
-    private void ensureRoznamaHearingContext(Long caseId, Long hearingId, LocalDate hearingDate, String login) {
-        CaseRegistry caseRow = resolveOfficerCase(caseId, login);
-        CaseOrderSheet sheet = caseOrderSheetRepository.findByCaseRegistryId(caseId)
-                .orElseThrow(() -> new IllegalArgumentException("Roznama not found. Save draft first."));
-        if (hearingId == null && hearingDate == null) {
-            if (sheet.getCurrentHearing() == null) {
-                throw new IllegalArgumentException("hearingId or hearingDate is required.");
-            }
-            return;
-        }
-        LocalDate defaultDate = hearingDate != null ? hearingDate : LocalDate.now();
-        CaseHearing hearing = resolveHearingForRoznama(caseRow, hearingId, hearingDate, defaultDate);
-        if (sheet.getCurrentHearing() != null && !Objects.equals(sheet.getCurrentHearing().getId(), hearing.getId())) {
-            throw new IllegalArgumentException(
-                    "Roznama is linked to a different hearing. Save draft again with this hearingId/hearingDate."
-            );
-        }
-        if (sheet.getCurrentHearing() == null) {
-            sheet.setCurrentHearing(hearing);
-            sheet.setUpdatedByLoginId(login);
-            caseOrderSheetRepository.save(sheet);
-        }
     }
 
     private Map<Long, CaseOrderSheet> loadRoznamaByCaseIds(List<Long> caseIds) {
@@ -1131,26 +1645,39 @@ public class CaseProceedingService {
     }
 
     private void prepareSheetForHearingDraft(CaseOrderSheet sheet, CaseHearing hearing, String login) {
+        assertNoticeServedForProceeding(hearing);
         boolean sameHearing = sheet.getCurrentHearing() != null
                 && Objects.equals(sheet.getCurrentHearing().getId(), hearing.getId());
         if (sameHearing) {
             return;
         }
         if (sheet.getStatus() == CaseOrderSheetStatus.PO_SIGNED) {
-            sheet.setStatus(CaseOrderSheetStatus.CLERK_DRAFT);
-            sheet.setDraftContent("");
+            Long caseId = sheet.getCaseRegistry() != null ? sheet.getCaseRegistry().getId() : null;
+            String draftJson = "";
+            if (caseId != null) {
+                List<CaseHearing> hearings =
+                        caseHearingRepository.findByCaseRegistryIdOrderByHearingNoAsc(caseId);
+                List<CaseOrderSheetHistory> histories =
+                        caseOrderSheetHistoryRepository.findByCaseRegistryIdOrderByCreatedAtDesc(caseId);
+                List<RoznamaTableEntryResponse> table =
+                        RoznamaContentHelper.buildTableRows(hearings, hearing, sheet, histories);
+                draftJson = RoznamaContentHelper.toContentJson(table);
+            }
+            sheet.setStatus(CaseOrderSheetStatus.PO_DRAFT);
+            sheet.setDraftContent(draftJson);
             sheet.setFinalContent(null);
             sheet.setDigitalSignatureRef(null);
             sheet.setPoFinalizedByLoginId(null);
             sheet.setPoSignedByLoginId(null);
-            sheet.setContent("");
+            sheet.setContent(draftJson);
+            sheet.setHearingOutcome(null);
             sheet.setCurrentHearing(hearing);
             sheet.setUpdatedByLoginId(login);
             return;
         }
-        if (sheet.getStatus() != null && sheet.getStatus() != CaseOrderSheetStatus.CLERK_DRAFT) {
+        if (sheet.getStatus() != null && !isProceedingDraftStatus(sheet.getStatus())) {
             throw new IllegalArgumentException(
-                    "Roznama for another hearing is in progress. Complete, sign, or revert it before starting this hearing date."
+                    "Proceeding for another hearing is in progress. Complete, sign, or revert it before starting this hearing date."
             );
         }
         sheet.setCurrentHearing(hearing);
@@ -1179,8 +1706,9 @@ public class CaseProceedingService {
             CaseHearing hearing
     ) {
         RoznamaHearingView view = new RoznamaHearingView();
-        view.proceedingStage = "ROZNAMA_NOT_STARTED";
-        view.canEdit = !hasInProgressRoznamaOnOtherHearing(sheet, hearing);
+        boolean noticeServed = Boolean.TRUE.equals(hearing.getNoticeServed());
+        view.proceedingStage = noticeServed ? "NOTICE_SERVED" : "AWAITING_NOTICE_SERVE";
+        view.canEdit = noticeServed && !hasInProgressRoznamaOnOtherHearing(sheet, hearing);
 
         if (sheet != null && sheet.getCurrentHearing() != null
                 && Objects.equals(sheet.getCurrentHearing().getId(), hearing.getId())) {
@@ -1191,7 +1719,7 @@ public class CaseProceedingService {
             view.draftContent = sheet.getDraftContent();
             view.finalContent = sheet.getFinalContent();
             view.updatedAt = sheet.getUpdatedAt();
-            view.canEdit = sheet.getStatus() == CaseOrderSheetStatus.CLERK_DRAFT;
+            view.canEdit = noticeServed && isProceedingDraftStatus(sheet.getStatus());
             return view;
         }
 
@@ -1244,10 +1772,15 @@ public class CaseProceedingService {
         }
         return switch (status) {
             case CLERK_DRAFT -> "ROZNAMA_CLERK_DRAFT";
+            case PO_DRAFT -> "ROZNAMA_PO_DRAFT";
             case PO_SCRUTINY -> "ROZNAMA_PO_SCRUTINY";
             case PO_FINALIZED -> "ROZNAMA_PO_FINALIZED";
             case PO_SIGNED -> "ROZNAMA_PO_SIGNED";
         };
+    }
+
+    private static boolean isProceedingDraftStatus(CaseOrderSheetStatus status) {
+        return status == CaseOrderSheetStatus.PO_DRAFT || status == CaseOrderSheetStatus.CLERK_DRAFT;
     }
 
     private static String parseHistoryStatus(String remarks) {
@@ -1257,6 +1790,34 @@ public class CaseProceedingService {
         }
         int sep = r.indexOf(" | ");
         return sep >= 0 ? r.substring(0, sep) : r;
+    }
+
+    private void enrichRoznamaTable(
+            RoznamaResponse out,
+            Long caseId,
+            CaseHearing hearing,
+            CaseOrderSheet sheet,
+            List<CaseOrderSheetHistory> histories
+    ) {
+        List<CaseHearing> hearings = caseHearingRepository.findByCaseRegistryIdOrderByHearingNoAsc(caseId);
+        List<RoznamaTableEntryResponse> rows =
+                RoznamaContentHelper.buildTableRows(hearings, hearing, sheet, histories);
+        out.setTableRows(rows);
+        String tableJson = RoznamaContentHelper.toContentJson(rows);
+        out.setContent(tableJson);
+        rows.stream()
+                .filter(row -> !row.isReadOnly())
+                .findFirst()
+                .ifPresentOrElse(
+                        editable -> out.setDraftContent(editable.getContent()),
+                        () -> {
+                            if (out.getFinalContent() != null && !out.getFinalContent().isBlank()) {
+                                out.setContent(out.getFinalContent());
+                            } else if (out.getDraftContent() != null && !out.getDraftContent().isBlank()) {
+                                out.setContent(out.getDraftContent());
+                            }
+                        }
+                );
     }
 
     private static RoznamaResponse toRoznamaResponse(CaseOrderSheetResponse sheet) {
@@ -1269,6 +1830,9 @@ public class CaseProceedingService {
         out.setDraftContent(sheet.getDraftContent());
         out.setFinalContent(sheet.getFinalContent());
         out.setStatus(sheet.getStatus());
+        out.setHearingOutcome(sheet.getHearingOutcome());
+        out.setCaseStatus(sheet.getCaseStatus());
+        out.setMessage(sheet.getMessage());
         out.setDigitalSignatureRef(sheet.getDigitalSignatureRef());
         out.setUpdatedAt(sheet.getUpdatedAt());
         out.setUpdatedByLoginId(sheet.getUpdatedByLoginId());
@@ -1284,6 +1848,7 @@ public class CaseProceedingService {
         out.setDraftContent(sheet.getDraftContent());
         out.setFinalContent(sheet.getFinalContent());
         out.setStatus(sheet.getStatus() != null ? sheet.getStatus().name() : null);
+        out.setHearingOutcome(sheet.getHearingOutcome() != null ? sheet.getHearingOutcome().name() : null);
         out.setCurrentHearingId(sheet.getCurrentHearing() != null ? sheet.getCurrentHearing().getId() : null);
         out.setDigitalSignatureRef(sheet.getDigitalSignatureRef());
         out.setUpdatedAt(sheet.getUpdatedAt());
@@ -1307,13 +1872,89 @@ public class CaseProceedingService {
         return out;
     }
 
-    private static CaseWorkflowActionResponse buildWorkflowAction(Long caseId, Long noticeId, String status, String message) {
-        CaseWorkflowActionResponse out = new CaseWorkflowActionResponse();
-        out.setCaseId(caseId);
-        out.setNoticeId(noticeId);
-        out.setStatus(status);
-        out.setMessage(message);
+    private CaseNotice findActiveNoticeForHearing(Long hearingId) {
+        if (hearingId == null) {
+            return null;
+        }
+        for (CaseNotice row : caseNoticeRepository.findByHearingIdOrderByIdDesc(hearingId)) {
+            if (row.getStatus() != CaseNoticeStatus.SERVED) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    private Map<Long, CaseHearing> loadLatestHearingByCaseIds(List<Long> caseIds) {
+        Map<Long, CaseHearing> out = new HashMap<>();
+        if (caseIds.isEmpty()) {
+            return out;
+        }
+        for (CaseHearing hearing : caseHearingRepository.findByCaseRegistry_IdInOrderByCaseRegistry_IdAscHearingNoDesc(caseIds)) {
+            if (hearing.getCaseRegistry() == null || hearing.getCaseRegistry().getId() == null) {
+                continue;
+            }
+            Long caseId = hearing.getCaseRegistry().getId();
+            out.putIfAbsent(caseId, hearing);
+        }
         return out;
+    }
+
+    private static String resolveCaseProceedingStage(
+            CaseRegistry caseRow,
+            CaseOrderSheet roznama,
+            CaseHearing latestHearing,
+            boolean noticeServedForLatestHearing
+    ) {
+        if (latestHearing != null && latestHearing.getHearingDate() != null
+                && !Boolean.TRUE.equals(latestHearing.getNoticeServed())
+                && !"COMPLETED".equalsIgnoreCase(latestHearing.getStatus())) {
+            return "AWAITING_NOTICE_SERVE";
+        }
+        if (roznama != null && roznama.getStatus() != null && latestHearing != null) {
+            boolean sheetForLatest = roznama.getCurrentHearing() != null
+                    && Objects.equals(roznama.getCurrentHearing().getId(), latestHearing.getId());
+            CaseOrderSheetStatus roznamaStatus = roznama.getStatus();
+            if (sheetForLatest) {
+                if (roznamaStatus != CaseOrderSheetStatus.PO_SIGNED) {
+                    return toRoznamaProceedingStage(roznamaStatus);
+                }
+                return "ROZNAMA_PO_SIGNED";
+            }
+        }
+        if (noticeServedForLatestHearing) {
+            return "NOTICE_SERVED";
+        }
+        if (latestHearing != null && latestHearing.getHearingDate() != null) {
+            return "AWAITING_NOTICE_SERVE";
+        }
+        String caseStatus = caseRow != null ? trimToNull(caseRow.getStatus()) : null;
+        if (caseStatus != null && "READY_FOR_JUDGMENT".equalsIgnoreCase(caseStatus)) {
+            return "READY_FOR_JUDGMENT";
+        }
+        if (caseStatus != null && "HEARING_SCHEDULED".equalsIgnoreCase(caseStatus)) {
+            return "AWAITING_NOTICE_SERVE";
+        }
+        return "ROZNAMA_NOT_STARTED";
+    }
+
+    private CaseNotice resolveOrCreateActiveNotice(
+            CaseRegistry caseRow,
+            CaseHearing hearing,
+            String login,
+            String noticeType
+    ) {
+        CaseNotice existing = findActiveNoticeForHearing(hearing.getId());
+        if (existing != null) {
+            return existing;
+        }
+        CaseNotice row = new CaseNotice();
+        row.setCaseRegistry(caseRow);
+        row.setHearing(hearing);
+        row.setStatus(CaseNoticeStatus.PO_DRAFT);
+        row.setClerkDraftedByLoginId(login);
+        row.setNoticeType(noticeType);
+        // Persisted once in serveNoticeToParty after draftContent is set (NOT NULL column).
+        return row;
     }
 
     private static CaseNoticeResponse toCaseNoticeResponse(CaseNotice row) {
@@ -1333,7 +1974,11 @@ public class CaseProceedingService {
         return out;
     }
 
-    private static CaseJudgmentWorkflowResponse toJudgmentWorkflowResponse(CaseRegistry caseRow, CaseJudgmentWorkflow row) {
+    private CaseJudgmentWorkflowResponse enrichJudgmentResponse(
+            CaseRegistry caseRow,
+            CaseJudgmentWorkflow row,
+            EmployeePosting posting
+    ) {
         CaseJudgmentWorkflowResponse out = new CaseJudgmentWorkflowResponse();
         out.setCaseId(caseRow.getId());
         out.setCaseNo(caseRow.getCaseNo());
@@ -1343,9 +1988,15 @@ public class CaseProceedingService {
             out.setDraftSummary(row.getDraftSummary());
             out.setFinalSummary(row.getFinalSummary());
             out.setPublishedSummary(row.getPublishedSummary());
+            out.setDigitalSignatureRef(row.getDigitalSignatureRef());
             out.setPublishedAt(row.getPublishedAt());
             out.setUpdatedAt(row.getUpdatedAt());
         }
+        List<String> allowed = workflowPolicyService.judgmentAllowed(caseRow, posting, row);
+        out.setAllowedActions(allowed);
+        out.setEditable(workflowPolicyService.judgmentEditable(caseRow, posting, row));
+        out.setSubmittable(workflowPolicyService.judgmentSubmittable(caseRow, posting, row));
+        out.setActorRole(workflowPolicyService.resolveOfficerActorRole(posting));
         return out;
     }
 
@@ -1381,11 +2032,33 @@ public class CaseProceedingService {
         }
     }
 
-    private static CaseInboxItemResponse toCaseInboxItem(CaseRegistry row, CaseOrderSheet roznama) {
+    private static CaseInboxItemResponse toCaseInboxItem(
+            CaseRegistry row,
+            CaseOrderSheet roznama,
+            CaseHearing latestHearing,
+            boolean noticeServed
+    ) {
         CaseInboxItemResponse out = new CaseInboxItemResponse();
         out.setCaseId(row.getId());
         out.setCaseNo(row.getCaseNo());
-        out.setStatus(row.getStatus());
+        String caseStatus = row.getStatus();
+        if (latestHearing != null
+                && Boolean.TRUE.equals(latestHearing.getNoticeServed())
+                && caseStatus != null
+                && !"DISPOSED".equalsIgnoreCase(caseStatus)
+                && !"NOTICE_SERVED".equalsIgnoreCase(caseStatus)
+                && !"HEARING_SCHEDULED".equalsIgnoreCase(caseStatus)
+                && !"READY_FOR_JUDGMENT".equalsIgnoreCase(caseStatus)) {
+            caseStatus = "NOTICE_SERVED";
+        }
+        if (latestHearing != null
+                && latestHearing.getHearingDate() != null
+                && !Boolean.TRUE.equals(latestHearing.getNoticeServed())
+                && !"COMPLETED".equalsIgnoreCase(latestHearing.getStatus())
+                && "NOTICE_SERVED".equalsIgnoreCase(caseStatus)) {
+            caseStatus = "HEARING_SCHEDULED";
+        }
+        out.setStatus(caseStatus);
         out.setFilingApplicationId(row.getFilingApplicationId());
         out.setCaseCategoryId(row.getCaseCategory() != null ? row.getCaseCategory().getId() : null);
         out.setCaseCategoryName(row.getCaseCategory() != null ? row.getCaseCategory().getName() : null);
@@ -1395,10 +2068,8 @@ public class CaseProceedingService {
         out.setDisposedAt(row.getDisposedAt());
         if (roznama != null) {
             out.setRoznamaId(roznama.getId());
-            out.setProceedingStage(toRoznamaProceedingStage(roznama.getStatus()));
-        } else {
-            out.setProceedingStage("ROZNAMA_NOT_STARTED");
         }
+        out.setProceedingStage(resolveCaseProceedingStage(row, roznama, latestHearing, noticeServed));
         return out;
     }
 }

@@ -50,6 +50,10 @@ public class CaseOrderSheet {
     @JoinColumn(name = "current_hearing_id")
     private CaseHearing currentHearing;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "hearing_outcome", length = 16)
+    private HearingOutcome hearingOutcome;
+
     @Column(name = "drafted_by_login_id", length = 150)
     private String draftedByLoginId;
 
@@ -133,6 +137,14 @@ public class CaseOrderSheet {
 
     public void setCurrentHearing(CaseHearing currentHearing) {
         this.currentHearing = currentHearing;
+    }
+
+    public HearingOutcome getHearingOutcome() {
+        return hearingOutcome;
+    }
+
+    public void setHearingOutcome(HearingOutcome hearingOutcome) {
+        this.hearingOutcome = hearingOutcome;
     }
 
     public String getDraftedByLoginId() {

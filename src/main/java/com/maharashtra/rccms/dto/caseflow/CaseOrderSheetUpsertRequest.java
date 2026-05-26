@@ -2,10 +2,12 @@ package com.maharashtra.rccms.dto.caseflow;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.time.LocalDate;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CaseOrderSheetUpsertRequest {
     private Long hearingId;
-    private java.time.LocalDate hearingDate;
+    private LocalDate hearingDate;
     private String content;
     private String remarks;
 
@@ -17,11 +19,11 @@ public class CaseOrderSheetUpsertRequest {
         this.hearingId = hearingId;
     }
 
-    public java.time.LocalDate getHearingDate() {
+    public LocalDate getHearingDate() {
         return hearingDate;
     }
 
-    public void setHearingDate(java.time.LocalDate hearingDate) {
+    public void setHearingDate(LocalDate hearingDate) {
         this.hearingDate = hearingDate;
     }
 

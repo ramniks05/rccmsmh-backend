@@ -38,6 +38,11 @@ public class ApplicationFormNestedPayload {
     @JsonAlias({"vakaltnamaAssignments"})
     private List<VakalatnamaGroupPayload> vakalatnamaAssignments;
 
+    /** Full preview mirror of root-level filing blocks for wizard re-hydrate. */
+    private ApplicationDescriptionPayload description;
+    private ApplicationDisputedOrderPayload disputedOrder;
+    private List<DisputedLandPayload> disputedLands;
+
     public Long getSubjectId() {
         return subjectId;
     }
@@ -186,5 +191,29 @@ public class ApplicationFormNestedPayload {
 
     public void setVakalatnamaAssignments(List<VakalatnamaGroupPayload> vakalatnamaAssignments) {
         this.vakalatnamaAssignments = vakalatnamaAssignments;
+    }
+
+    public ApplicationDescriptionPayload getDescription() {
+        return description;
+    }
+
+    public void setDescription(ApplicationDescriptionPayload description) {
+        this.description = description;
+    }
+
+    public ApplicationDisputedOrderPayload getDisputedOrder() {
+        return disputedOrder;
+    }
+
+    public void setDisputedOrder(ApplicationDisputedOrderPayload disputedOrder) {
+        this.disputedOrder = disputedOrder;
+    }
+
+    public List<DisputedLandPayload> getDisputedLands() {
+        return disputedLands;
+    }
+
+    public void setDisputedLands(List<DisputedLandPayload> disputedLands) {
+        this.disputedLands = disputedLands;
     }
 }

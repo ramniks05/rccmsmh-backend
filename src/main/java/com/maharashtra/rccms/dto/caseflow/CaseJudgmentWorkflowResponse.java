@@ -1,8 +1,11 @@
 package com.maharashtra.rccms.dto.caseflow;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public class CaseJudgmentWorkflowResponse {
+
     private Long caseId;
     private String caseNo;
     private String caseStatus;
@@ -10,8 +13,16 @@ public class CaseJudgmentWorkflowResponse {
     private String draftSummary;
     private String finalSummary;
     private String publishedSummary;
+    private String digitalSignatureRef;
     private Instant publishedAt;
     private Instant updatedAt;
+    private List<String> allowedActions = new ArrayList<>();
+    /** True when current login may edit judgment text (clerk: CLERK_DRAFT; PO: PO_DRAFT / PO_SCRUTINY). */
+    private boolean editable;
+    /** True when clerk may submit to PO (CLERK_DRAFT only). */
+    private boolean submittable;
+    /** PRESIDING_OFFICER or CLERK for current login. */
+    private String actorRole;
 
     public Long getCaseId() {
         return caseId;
@@ -69,6 +80,14 @@ public class CaseJudgmentWorkflowResponse {
         this.publishedSummary = publishedSummary;
     }
 
+    public String getDigitalSignatureRef() {
+        return digitalSignatureRef;
+    }
+
+    public void setDigitalSignatureRef(String digitalSignatureRef) {
+        this.digitalSignatureRef = digitalSignatureRef;
+    }
+
     public Instant getPublishedAt() {
         return publishedAt;
     }
@@ -83,5 +102,37 @@ public class CaseJudgmentWorkflowResponse {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public List<String> getAllowedActions() {
+        return allowedActions;
+    }
+
+    public void setAllowedActions(List<String> allowedActions) {
+        this.allowedActions = allowedActions != null ? allowedActions : new ArrayList<>();
+    }
+
+    public boolean isEditable() {
+        return editable;
+    }
+
+    public void setEditable(boolean editable) {
+        this.editable = editable;
+    }
+
+    public boolean isSubmittable() {
+        return submittable;
+    }
+
+    public void setSubmittable(boolean submittable) {
+        this.submittable = submittable;
+    }
+
+    public String getActorRole() {
+        return actorRole;
+    }
+
+    public void setActorRole(String actorRole) {
+        this.actorRole = actorRole;
     }
 }

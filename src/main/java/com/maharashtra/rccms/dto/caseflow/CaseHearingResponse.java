@@ -11,6 +11,12 @@ public class CaseHearingResponse {
     private LocalDate hearingDate;
     private String status;
     private Boolean noticeGenerated;
+    /** Set true when PO serves notice for this hearing. */
+    private Boolean noticeServed;
+    /** True when noticeServed; proceeding/roznama may be started. */
+    private Boolean proceedingAllowed;
+    /** True when PO signed roznamma with outcome FINAL for this hearing. */
+    private Boolean finalHearing;
     private String remarks;
     private Instant createdAt;
     private Instant updatedAt;
@@ -69,6 +75,30 @@ public class CaseHearingResponse {
 
     public void setNoticeGenerated(Boolean noticeGenerated) {
         this.noticeGenerated = noticeGenerated;
+    }
+
+    public Boolean getNoticeServed() {
+        return noticeServed;
+    }
+
+    public void setNoticeServed(Boolean noticeServed) {
+        this.noticeServed = noticeServed;
+    }
+
+    public Boolean getProceedingAllowed() {
+        return proceedingAllowed;
+    }
+
+    public void setProceedingAllowed(Boolean proceedingAllowed) {
+        this.proceedingAllowed = proceedingAllowed;
+    }
+
+    public Boolean getFinalHearing() {
+        return finalHearing;
+    }
+
+    public void setFinalHearing(Boolean finalHearing) {
+        this.finalHearing = finalHearing;
     }
 
     public String getRemarks() {

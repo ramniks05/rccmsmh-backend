@@ -6,11 +6,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class CaseNoticeDraftRequest {
+public class CaseNoticeServeToPartyRequest {
     private Long hearingId;
     private String noticeType;
     private String draftContent;
+    private String finalContent;
     private List<String> selectedParties = new ArrayList<>();
+    /** Optional; backend generates one when omitted. */
+    private String digitalSignatureRef;
 
     public Long getHearingId() {
         return hearingId;
@@ -36,11 +39,27 @@ public class CaseNoticeDraftRequest {
         this.draftContent = draftContent;
     }
 
+    public String getFinalContent() {
+        return finalContent;
+    }
+
+    public void setFinalContent(String finalContent) {
+        this.finalContent = finalContent;
+    }
+
     public List<String> getSelectedParties() {
         return selectedParties;
     }
 
     public void setSelectedParties(List<String> selectedParties) {
         this.selectedParties = selectedParties;
+    }
+
+    public String getDigitalSignatureRef() {
+        return digitalSignatureRef;
+    }
+
+    public void setDigitalSignatureRef(String digitalSignatureRef) {
+        this.digitalSignatureRef = digitalSignatureRef;
     }
 }

@@ -1,5 +1,6 @@
 package com.maharashtra.rccms.model.filing;
 
+import com.maharashtra.rccms.model.master.DocumentType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -30,6 +31,10 @@ public class ApplicationAttachment {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 48)
     private ApplicationAttachmentKind kind;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "document_type_id")
+    private DocumentType documentType;
 
     @Column(name = "storage_key", nullable = false, length = 1024)
     private String storageKey;
@@ -64,6 +69,14 @@ public class ApplicationAttachment {
 
     public void setKind(ApplicationAttachmentKind kind) {
         this.kind = kind;
+    }
+
+    public DocumentType getDocumentType() {
+        return documentType;
+    }
+
+    public void setDocumentType(DocumentType documentType) {
+        this.documentType = documentType;
     }
 
     public String getStorageKey() {

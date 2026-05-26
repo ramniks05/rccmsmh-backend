@@ -6,6 +6,9 @@ public class CaseJudgmentResponse {
     private Long caseId;
     private String caseNo;
     private String status;
+    private String workflowStatus;
+    private String judgmentSummary;
+    private String digitalSignatureRef;
     private Instant disposedAt;
     private String message;
 
@@ -31,6 +34,30 @@ public class CaseJudgmentResponse {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getWorkflowStatus() {
+        return workflowStatus;
+    }
+
+    public void setWorkflowStatus(String workflowStatus) {
+        this.workflowStatus = workflowStatus;
+    }
+
+    public String getJudgmentSummary() {
+        return judgmentSummary;
+    }
+
+    public void setJudgmentSummary(String judgmentSummary) {
+        this.judgmentSummary = judgmentSummary;
+    }
+
+    public String getDigitalSignatureRef() {
+        return digitalSignatureRef;
+    }
+
+    public void setDigitalSignatureRef(String digitalSignatureRef) {
+        this.digitalSignatureRef = digitalSignatureRef;
     }
 
     public Instant getDisposedAt() {

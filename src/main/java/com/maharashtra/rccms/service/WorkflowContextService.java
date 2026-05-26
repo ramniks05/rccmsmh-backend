@@ -91,7 +91,7 @@ public class WorkflowContextService {
         CaseWorkflowContextResponse out = new CaseWorkflowContextResponse();
         out.setCaseId(caseRow.getId());
         out.setCaseNo(caseRow.getCaseNo());
-        out.setCaseStatus(caseRow.getStatus());
+        out.setCaseStatus(resolveDisplayCaseStatus(caseRow, activeHearing));
         out.setFilingApplicationId(caseRow.getFilingApplicationId());
         CaseCategory cat = caseRow.getCaseCategory();
         if (cat != null) {
@@ -103,14 +103,22 @@ public class WorkflowContextService {
 
         WorkflowArtifactContextResponse noticeCtx = new WorkflowArtifactContextResponse();
         noticeCtx.setArtifact("NOTICE");
-        if (draftNotice != null) {
-            noticeCtx.setArtifactId(draftNotice.getId());
-            noticeCtx.setStatus(draftNotice.getStatus() != null ? draftNotice.getStatus().name() : null);
+        boolean noticeServedOnActive = activeHearing != null && Boolean.TRUE.equals(activeHearing.getNoticeServed());
+        CaseNotice servedNotice = noticeServedOnActive && activeHearing != null
+                ? caseNoticeRepository.findFirstByHearingIdAndStatusInOrderByIdDesc(
+                        activeHearing.getId(), List.of(CaseNoticeStatus.SERVED)
+                ).orElse(draftNotice)
+                : draftNotice;
+        if (servedNotice != null) {
+            noticeCtx.setArtifactId(servedNotice.getId());
+            if (noticeServedOnActive) {
+                noticeCtx.setStatus(CaseNoticeStatus.SERVED.name());
+            }
         }
         if (activeHearing != null) {
             noticeCtx.setHearingId(activeHearing.getId());
             noticeCtx.setHearingNo(activeHearing.getHearingNo());
-            noticeCtx.setNoticeServed(Boolean.TRUE.equals(activeHearing.getNoticeServed()));
+            noticeCtx.setNoticeServed(noticeServedOnActive);
         }
         noticeCtx.setConfig(def.getNotice());
         noticeCtx.setAllowedActions(workflowPolicyService.noticeAllowed(caseRow, posting, activeHearing, draftNotice));
@@ -118,7 +126,11 @@ public class WorkflowContextService {
 
         WorkflowArtifactContextResponse roznamaCtx = new WorkflowArtifactContextResponse();
         roznamaCtx.setArtifact("ROZNAMA");
-        if (sheet != null) {
+        boolean sheetForActiveHearing = sheet != null
+                && activeHearing != null
+                && sheet.getCurrentHearing() != null
+                && Objects.equals(sheet.getCurrentHearing().getId(), activeHearing.getId());
+        if (sheet != null && sheetForActiveHearing) {
             roznamaCtx.setArtifactId(sheet.getId());
             roznamaCtx.setStatus(sheet.getStatus() != null ? sheet.getStatus().name() : null);
             if (sheet.getHearingOutcome() != null) {
@@ -142,6 +154,9 @@ public class WorkflowContextService {
         }
         judgmentCtx.setConfig(def.getJudgment());
         judgmentCtx.setAllowedActions(workflowPolicyService.judgmentAllowed(caseRow, posting, judgment));
+        judgmentCtx.setEditable(workflowPolicyService.judgmentEditable(caseRow, posting, judgment));
+        judgmentCtx.setSubmittable(workflowPolicyService.judgmentSubmittable(caseRow, posting, judgment));
+        judgmentCtx.setActorRole(workflowPolicyService.resolveOfficerActorRole(posting));
         out.setJudgment(judgmentCtx);
 
         List<WorkflowHearingContextResponse> hearingRows = new ArrayList<>();
@@ -155,7 +170,9 @@ public class WorkflowContextService {
             CaseNotice activeNotice = findActiveNoticeForHearing(h.getId());
             if (activeNotice != null) {
                 hr.setActiveNoticeId(activeNotice.getId());
-                hr.setActiveNoticeStatus(activeNotice.getStatus() != null ? activeNotice.getStatus().name() : null);
+                if (Boolean.TRUE.equals(h.getNoticeServed())) {
+                    hr.setActiveNoticeStatus(CaseNoticeStatus.SERVED.name());
+                }
             }
             CaseNotice editable = caseNoticeRepository.findFirstByHearingIdAndStatusInOrderByIdDesc(
                     h.getId(),
@@ -179,6 +196,10 @@ public class WorkflowContextService {
         return out;
     }
 
+    /**
+     * Default active hearing = latest non-COMPLETED row (next cycle after adjourn).
+     * Explicit {@code hearingId} still returns that row even when COMPLETED (read-only view).
+     */
     private static CaseHearing resolveActiveHearing(List<CaseHearing> hearings, Long hearingId) {
         if (hearings == null || hearings.isEmpty()) {
             return null;
@@ -198,6 +219,23 @@ public class WorkflowContextService {
             }
         }
         return latest;
+    }
+
+    /** Case status for UI: new hearing after adjourn stays HEARING_SCHEDULED until its notice is served. */
+    private static String resolveDisplayCaseStatus(CaseRegistry caseRow, CaseHearing activeHearing) {
+        if (caseRow == null) {
+            return null;
+        }
+        String status = caseRow.getStatus();
+        if (activeHearing != null
+                && activeHearing.getHearingDate() != null
+                && !Boolean.TRUE.equals(activeHearing.getNoticeServed())
+                && !"COMPLETED".equalsIgnoreCase(activeHearing.getStatus())) {
+            if ("NOTICE_SERVED".equalsIgnoreCase(status) || "ADJOURNED".equalsIgnoreCase(status)) {
+                return "HEARING_SCHEDULED";
+            }
+        }
+        return status;
     }
 
     private EmployeePosting resolveOfficerPosting(String login) {

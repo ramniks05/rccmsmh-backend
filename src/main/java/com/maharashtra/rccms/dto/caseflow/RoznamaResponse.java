@@ -25,6 +25,8 @@ public class RoznamaResponse {
     private boolean attendanceRequired;
     private boolean attendanceComplete;
     private List<HearingAttendanceItemResponse> attendance = new ArrayList<>();
+    /** Per-hearing roznamma rows: prior hearings read-only, current hearing editable. */
+    private List<RoznamaTableEntryResponse> tableRows = new ArrayList<>();
 
     public Long getId() {
         return id;
@@ -184,5 +186,13 @@ public class RoznamaResponse {
 
     public void setAttendance(List<HearingAttendanceItemResponse> attendance) {
         this.attendance = attendance != null ? attendance : new ArrayList<>();
+    }
+
+    public List<RoznamaTableEntryResponse> getTableRows() {
+        return tableRows;
+    }
+
+    public void setTableRows(List<RoznamaTableEntryResponse> tableRows) {
+        this.tableRows = tableRows != null ? tableRows : new ArrayList<>();
     }
 }

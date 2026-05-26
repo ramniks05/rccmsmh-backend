@@ -14,6 +14,12 @@ public class WorkflowArtifactContextResponse {
     private String hearingOutcome;
     private boolean noticeServed;
     private List<String> allowedActions = new ArrayList<>();
+    /** Judgment artifact: true when current login may edit draft text. */
+    private boolean editable;
+    /** Judgment artifact: true when clerk may submit to PO (CLERK_DRAFT only). */
+    private boolean submittable;
+    /** PRESIDING_OFFICER or CLERK for current login (designation-based). */
+    private String actorRole;
     private Object config;
 
     public String getArtifact() {
@@ -77,7 +83,31 @@ public class WorkflowArtifactContextResponse {
     }
 
     public void setAllowedActions(List<String> allowedActions) {
-        this.allowedActions = allowedActions;
+        this.allowedActions = allowedActions != null ? allowedActions : new ArrayList<>();
+    }
+
+    public boolean isEditable() {
+        return editable;
+    }
+
+    public void setEditable(boolean editable) {
+        this.editable = editable;
+    }
+
+    public boolean isSubmittable() {
+        return submittable;
+    }
+
+    public void setSubmittable(boolean submittable) {
+        this.submittable = submittable;
+    }
+
+    public String getActorRole() {
+        return actorRole;
+    }
+
+    public void setActorRole(String actorRole) {
+        this.actorRole = actorRole;
     }
 
     public Object getConfig() {

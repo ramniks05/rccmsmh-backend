@@ -1,6 +1,12 @@
 package com.maharashtra.rccms.dto.filing;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DisputedLandPayload {
@@ -31,11 +37,19 @@ public class DisputedLandPayload {
     private String ctsNo;
     private String parentCtsNo;
     private String subCtsNo;
+    @JsonAlias({"total_area", "Total_Area", "total_area_ha"})
     private String totalArea;
+    @JsonAlias({"disputed_area", "Disputed_Area", "disputed_area_ha"})
     private String disputedArea;
+    @JsonAlias({"area_unit", "Area_Unit"})
     private String areaUnit;
+    @JsonAlias({"land_holders_text", "land_holders", "landHolders", "holderNames"})
     private String landHoldersText;
-    private java.util.Map<String, Object> landDetail;
+    @JsonAlias({"landDetail", "land_detail", "landRecord", "land_record"})
+    private Map<String, Object> landDetail;
+
+    @JsonIgnore
+    private final Map<String, Object> extraFields = new LinkedHashMap<>();
 
     public Integer getLineNo() {
         return lineNo;
@@ -261,11 +275,36 @@ public class DisputedLandPayload {
         this.landHoldersText = landHoldersText;
     }
 
-    public java.util.Map<String, Object> getLandDetail() {
+    public Map<String, Object> getLandDetail() {
         return landDetail;
     }
 
-    public void setLandDetail(java.util.Map<String, Object> landDetail) {
+    public void setLandDetail(Map<String, Object> landDetail) {
         this.landDetail = landDetail;
+    }
+
+    @JsonIgnore
+    public Map<String, Object> getExtraFields() {
+        return extraFields;
+    }
+
+    @JsonAnySetter
+    public void putExtraField(String name, Object value) {
+        if (value == null || isDeclaredProperty(name)) {
+            return;
+        }
+        extraFields.put(name, value);
+    }
+
+    private static boolean isDeclaredProperty(String name) {
+        return switch (name) {
+            case "lineNo", "landType", "externalSource", "districtCode", "districtName",
+                    "talukaCode", "talukaName", "villageLgdCode", "villageName", "surveyPin",
+                    "pin1", "pin2", "pin3", "pin4", "pin5", "pin6", "pin7", "pin8",
+                    "officeCode", "officeName", "villageCode", "ctsNo", "parentCtsNo", "subCtsNo",
+                    "totalArea", "total_area", "disputedArea", "disputed_area", "areaUnit", "area_unit",
+                    "landHoldersText", "land_detail", "landDetail" -> true;
+            default -> false;
+        };
     }
 }

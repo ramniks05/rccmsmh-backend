@@ -27,6 +27,7 @@ public class WorkflowSchemaPatch implements ApplicationRunner {
         patchNoticeStatus();
         patchOrderSheetStatus();
         patchJudgmentWorkflowStatus();
+        patchJudgmentDigitalSignature();
         patchHearingNoticeServed();
         patchHearingFinalHearing();
         patchOrderSheetHearingOutcome();
@@ -116,6 +117,14 @@ public class WorkflowSchemaPatch implements ApplicationRunner {
         } catch (Exception ex) {
             log.warn("Could not patch case_order_sheet status constraint: {}", ex.getMessage());
         }
+    }
+
+    private void patchJudgmentDigitalSignature() {
+        addColumnIfMissing(
+                "case_judgment_workflow",
+                "digital_signature_ref",
+                "ALTER TABLE case_judgment_workflow ADD COLUMN digital_signature_ref VARCHAR(255)"
+        );
     }
 
     private void patchJudgmentWorkflowStatus() {

@@ -27,14 +27,19 @@ public class CaseRegistryStatusSyncService {
         this.caseNoticeRepository = caseNoticeRepository;
     }
 
+    /**
+     * Notice served for the given hearing only. Does not treat an older hearing's served notice
+     * as served for a newly scheduled hearing after adjourn.
+     */
     public boolean isNoticeServedForCase(Long caseId, CaseHearing hearing) {
-        if (hearing != null && Boolean.TRUE.equals(hearing.getNoticeServed())) {
+        if (hearing == null) {
+            return caseId != null
+                    && caseNoticeRepository.existsByCaseRegistry_IdAndStatus(caseId, CaseNoticeStatus.SERVED);
+        }
+        if (Boolean.TRUE.equals(hearing.getNoticeServed())) {
             return true;
         }
-        if (hearing != null && caseNoticeRepository.existsByHearingIdAndStatus(hearing.getId(), CaseNoticeStatus.SERVED)) {
-            return true;
-        }
-        return caseId != null && caseNoticeRepository.existsByCaseRegistry_IdAndStatus(caseId, CaseNoticeStatus.SERVED);
+        return caseNoticeRepository.existsByHearingIdAndStatus(hearing.getId(), CaseNoticeStatus.SERVED);
     }
 
     /** Runs in a new transaction so it works when called from read-only inbox/dashboard queries. */
@@ -51,20 +56,25 @@ public class CaseRegistryStatusSyncService {
         if (!served && hearingId != null) {
             served = caseNoticeRepository.existsByHearingIdAndStatus(hearingId, CaseNoticeStatus.SERVED);
         }
-        if (!served) {
+        if (!served || hearingId == null) {
             return;
         }
-        if (hearingId != null) {
-            caseHearingRepository.findById(hearingId).ifPresent(hearing -> {
-                if (!Boolean.TRUE.equals(hearing.getNoticeServed())) {
-                    hearing.setNoticeServed(true);
-                    caseHearingRepository.save(hearing);
-                }
-            });
+        CaseHearing hearing = caseHearingRepository.findById(hearingId).orElse(null);
+        if (hearing == null) {
+            return;
         }
-        if (!"NOTICE_SERVED".equalsIgnoreCase(caseRow.getStatus())) {
-            caseRow.setStatus("NOTICE_SERVED");
-            caseRegistryRepository.save(caseRow);
+        if (!Boolean.TRUE.equals(hearing.getNoticeServed())) {
+            hearing.setNoticeServed(true);
+            caseHearingRepository.save(hearing);
+        }
+        if (Boolean.TRUE.equals(hearing.getNoticeServed())) {
+            String current = caseRow.getStatus();
+            if (current == null
+                    || "ACTIVE".equalsIgnoreCase(current)
+                    || "HEARING_SCHEDULED".equalsIgnoreCase(current)) {
+                caseRow.setStatus("NOTICE_SERVED");
+                caseRegistryRepository.save(caseRow);
+            }
         }
     }
 }

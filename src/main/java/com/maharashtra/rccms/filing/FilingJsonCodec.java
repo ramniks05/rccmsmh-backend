@@ -62,6 +62,17 @@ public class FilingJsonCodec {
         }
     }
 
+    public <T> T readValue(String json, Class<T> type) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, type);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalArgumentException("Could not deserialize filing JSON.", ex);
+        }
+    }
+
     public Notice9ResolvedPayload readNotice9(String json) {
         if (json == null || json.isBlank()) {
             return null;

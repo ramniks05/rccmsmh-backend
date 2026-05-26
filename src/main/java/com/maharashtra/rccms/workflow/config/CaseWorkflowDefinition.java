@@ -78,7 +78,7 @@ public class CaseWorkflowDefinition {
         NoticeConfig notice = new NoticeConfig();
         notice.setMode("PO_ONLY");
         notice.setScope("PER_HEARING");
-        notice.setSteps(List.of("DRAFT", "FINALIZE", "SIGN", "SERVE"));
+        notice.setSteps(List.of("SERVE"));
         notice.setVisibleTo(List.of("CLERK", "PO", "APPLICANT", "ADVOCATE"));
         d.setNotice(notice);
 
@@ -92,7 +92,7 @@ public class CaseWorkflowDefinition {
         JudgmentConfig judgment = new JudgmentConfig();
         judgment.setMode("PO_THEN_CLERK");
         judgment.setAuditTrailRequired(true);
-        judgment.setSteps(List.of("PO_DRAFT", "CLERK_EDIT", "PO_SCRUTINY", "FINALIZE", "PUBLISH"));
+        judgment.setSteps(List.of("PO_DRAFT", "CLERK_EDIT", "PO_SCRUTINY", "FINALIZE", "SIGN_PUBLISH"));
         d.setJudgment(judgment);
 
         return d;
@@ -134,7 +134,7 @@ public class CaseWorkflowDefinition {
     public static class NoticeConfig {
         private String mode = "PO_ONLY";
         private String scope = "PER_HEARING";
-        private List<String> steps = List.of("DRAFT", "FINALIZE", "SIGN", "SERVE");
+        private List<String> steps = List.of("SERVE");
         private List<String> visibleTo = List.of("CLERK", "PO", "APPLICANT");
 
         public String getMode() {

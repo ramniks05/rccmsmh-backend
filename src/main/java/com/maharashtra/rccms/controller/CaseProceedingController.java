@@ -5,6 +5,7 @@ import com.maharashtra.rccms.dto.caseflow.CaseHearingRescheduleRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseHearingScheduleRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseInboxItemResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseJudgmentDraftRequest;
+import com.maharashtra.rccms.dto.caseflow.CaseJudgmentSignPublishRequest;
 import com.maharashtra.rccms.dto.caseflow.CaseJudgmentWorkflowResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseNoticeResponse;
 import com.maharashtra.rccms.dto.caseflow.CaseNoticeServeToPartyRequest;
@@ -252,6 +253,19 @@ public class CaseProceedingController {
     public ResponseEntity<?> publishJudgment(@PathVariable("caseId") Long caseId, Principal principal) {
         try {
             return ResponseEntity.ok(caseProceedingService.publishJudgment(caseId, principal));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @PostMapping("/{caseId}/judgment/sign-and-publish")
+    public ResponseEntity<?> signAndPublishJudgment(
+            @PathVariable("caseId") Long caseId,
+            @RequestBody CaseJudgmentSignPublishRequest body,
+            Principal principal
+    ) {
+        try {
+            return ResponseEntity.ok(caseProceedingService.signAndPublishJudgment(caseId, body, principal));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }

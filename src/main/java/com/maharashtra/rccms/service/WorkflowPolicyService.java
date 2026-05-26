@@ -180,6 +180,11 @@ public class WorkflowPolicyService {
                 && sheet.getCurrentHearing() != null
                 && Objects.equals(sheet.getCurrentHearing().getId(), hearing.getId());
         if (!signedForThisHearing) {
+            // COMPLETE_ROZNAMA runs draft → finalize → sign in one request; sub-actions must be allowed too.
+            actions.add(WorkflowAction.DRAFT_ROZNAMA);
+            actions.add(WorkflowAction.UPDATE_ROZNAMA);
+            actions.add(WorkflowAction.FINALIZE_ROZNAMA);
+            actions.add(WorkflowAction.SIGN_ROZNAMA);
             actions.add(WorkflowAction.COMPLETE_ROZNAMA);
         }
         return toNames(actions);
@@ -197,9 +202,11 @@ public class WorkflowPolicyService {
         boolean clerk = isClerk(posting);
 
         if (caseRow != null && po && "READY_FOR_JUDGMENT".equalsIgnoreCase(caseRow.getStatus())) {
-            actions.add(WorkflowAction.PO_DRAFT_JUDGMENT);
-            actions.add(WorkflowAction.UPDATE_PO_JUDGMENT);
-            return toNames(actions);
+            if (row == null || row.getStatus() == null || row.getStatus() == CaseJudgmentWorkflowStatus.PO_DRAFT) {
+                actions.add(WorkflowAction.PO_DRAFT_JUDGMENT);
+                actions.add(WorkflowAction.UPDATE_PO_JUDGMENT);
+                return toNames(actions);
+            }
         }
 
         if (row == null || row.getStatus() == null) {
@@ -226,24 +233,67 @@ public class WorkflowPolicyService {
             } else if (status == CaseJudgmentWorkflowStatus.CLERK_DRAFT && po) {
                 actions.add(WorkflowAction.REVERT_JUDGMENT_TO_CLERK);
             } else if (status == CaseJudgmentWorkflowStatus.PO_SCRUTINY && po) {
+                actions.add(WorkflowAction.UPDATE_PO_JUDGMENT);
                 actions.add(WorkflowAction.FINALIZE_JUDGMENT);
                 actions.add(WorkflowAction.REVERT_JUDGMENT_TO_CLERK);
+                actions.add(WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT);
             } else if (status == CaseJudgmentWorkflowStatus.PO_FINALIZED && po) {
                 actions.add(WorkflowAction.PUBLISH_JUDGMENT);
                 actions.add(WorkflowAction.REVERT_JUDGMENT_TO_CLERK);
+                actions.add(WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT);
             }
         } else {
             if (status == CaseJudgmentWorkflowStatus.CLERK_DRAFT && clerk) {
                 actions.add(WorkflowAction.CLERK_UPDATE_JUDGMENT);
                 actions.add(WorkflowAction.SUBMIT_JUDGMENT_TO_PO);
             } else if (status == CaseJudgmentWorkflowStatus.PO_SCRUTINY && po) {
+                actions.add(WorkflowAction.UPDATE_PO_JUDGMENT);
                 actions.add(WorkflowAction.FINALIZE_JUDGMENT);
                 actions.add(WorkflowAction.REVERT_JUDGMENT_TO_CLERK);
+                actions.add(WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT);
             } else if (status == CaseJudgmentWorkflowStatus.PO_FINALIZED && po) {
                 actions.add(WorkflowAction.PUBLISH_JUDGMENT);
+                actions.add(WorkflowAction.SIGN_AND_PUBLISH_JUDGMENT);
             }
         }
         return toNames(actions);
+    }
+
+    /**
+     * Whether the current login may edit judgment text. Based on workflow status + role,
+     * not only {@link #judgmentAllowed} (avoids false when designation/allowedActions mismatch).
+     */
+    public boolean judgmentEditable(CaseRegistry caseRow, EmployeePosting posting, CaseJudgmentWorkflow row) {
+        if (caseRow == null || "DISPOSED".equalsIgnoreCase(trimStatus(caseRow.getStatus()))) {
+            return false;
+        }
+        if (row == null || row.getStatus() == null || row.getStatus() == CaseJudgmentWorkflowStatus.PUBLISHED) {
+            return false;
+        }
+        CaseJudgmentWorkflowStatus status = row.getStatus();
+        if (isClerk(posting)) {
+            return status == CaseJudgmentWorkflowStatus.CLERK_DRAFT;
+        }
+        if (isPo(posting)) {
+            return status == CaseJudgmentWorkflowStatus.PO_DRAFT
+                    || status == CaseJudgmentWorkflowStatus.PO_SCRUTINY;
+        }
+        return false;
+    }
+
+    public boolean judgmentSubmittable(CaseRegistry caseRow, EmployeePosting posting, CaseJudgmentWorkflow row) {
+        if (caseRow == null || row == null || row.getStatus() != CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
+            return false;
+        }
+        return isClerk(posting);
+    }
+
+    public String resolveOfficerActorRole(EmployeePosting posting) {
+        return isPo(posting) ? "PRESIDING_OFFICER" : "CLERK";
+    }
+
+    private static String trimStatus(String value) {
+        return value != null ? value.trim() : null;
     }
 
     public static Set<CaseNoticeStatus> editableNoticeStatuses() {

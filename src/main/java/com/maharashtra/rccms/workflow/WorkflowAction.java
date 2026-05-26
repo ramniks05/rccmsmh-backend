@@ -44,5 +44,7 @@ public enum WorkflowAction {
     SUBMIT_JUDGMENT_TO_PO,
     REVERT_JUDGMENT_TO_CLERK,
     FINALIZE_JUDGMENT,
-    PUBLISH_JUDGMENT
+    PUBLISH_JUDGMENT,
+    /** One-shot: finalize (if under PO scrutiny), sign, publish, and dispose case. */
+    SIGN_AND_PUBLISH_JUDGMENT
 }

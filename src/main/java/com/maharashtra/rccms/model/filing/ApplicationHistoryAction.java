@@ -7,8 +7,10 @@ public enum ApplicationHistoryAction {
     RETURNED_TO_CLERK,
     PO_REJECTED,
     CASE_REGISTERED,
-    /** Case proceeding: hearing scheduled. */
+    /** Case proceeding: first / manual hearing scheduled. */
     HEARING_SCHEDULED,
+    /** Case proceeding: next hearing date fixed on adjourn (not a separate manual schedule). */
+    NEXT_HEARING_ADJOURN,
     /** Case proceeding: notice drafted (officer view). */
     NOTICE_DRAFTED,
     /** Case proceeding: notice under PO scrutiny. */

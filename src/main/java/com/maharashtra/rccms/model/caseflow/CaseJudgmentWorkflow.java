@@ -57,6 +57,9 @@ public class CaseJudgmentWorkflow {
     @Column(name = "published_at")
     private Instant publishedAt;
 
+    @Column(name = "digital_signature_ref", length = 255)
+    private String digitalSignatureRef;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -149,6 +152,14 @@ public class CaseJudgmentWorkflow {
 
     public void setPublishedAt(Instant publishedAt) {
         this.publishedAt = publishedAt;
+    }
+
+    public String getDigitalSignatureRef() {
+        return digitalSignatureRef;
+    }
+
+    public void setDigitalSignatureRef(String digitalSignatureRef) {
+        this.digitalSignatureRef = digitalSignatureRef;
     }
 
     public Instant getCreatedAt() {

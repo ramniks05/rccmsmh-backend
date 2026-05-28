@@ -30,8 +30,10 @@ public class DisputedLandPayload {
     private String pin6;
     private String pin7;
     private String pin8;
-    /** Urban */
+    /** Urban — sub-office from ePCIS (e.g. 0101); use {@link #primaryOfficeCode} for master_office lookup. */
     private String officeCode;
+    @JsonAlias({"primary_office_code", "Primary_Office_Code", "parent_office_code", "parentOfficeCode"})
+    private String primaryOfficeCode;
     private String officeName;
     private String villageCode;
     private String ctsNo;
@@ -203,6 +205,14 @@ public class DisputedLandPayload {
         this.officeCode = officeCode;
     }
 
+    public String getPrimaryOfficeCode() {
+        return primaryOfficeCode;
+    }
+
+    public void setPrimaryOfficeCode(String primaryOfficeCode) {
+        this.primaryOfficeCode = primaryOfficeCode;
+    }
+
     public String getOfficeName() {
         return officeName;
     }
@@ -301,7 +311,7 @@ public class DisputedLandPayload {
             case "lineNo", "landType", "externalSource", "districtCode", "districtName",
                     "talukaCode", "talukaName", "villageLgdCode", "villageName", "surveyPin",
                     "pin1", "pin2", "pin3", "pin4", "pin5", "pin6", "pin7", "pin8",
-                    "officeCode", "officeName", "villageCode", "ctsNo", "parentCtsNo", "subCtsNo",
+                    "officeCode", "primaryOfficeCode", "officeName", "villageCode", "ctsNo", "parentCtsNo", "subCtsNo",
                     "totalArea", "total_area", "disputedArea", "disputed_area", "areaUnit", "area_unit",
                     "landHoldersText", "land_detail", "landDetail" -> true;
             default -> false;

@@ -3,6 +3,7 @@ package com.maharashtra.rccms.service;
 import com.maharashtra.rccms.dto.filing.*;
 import com.maharashtra.rccms.filing.DisputedLandFieldSupport;
 import com.maharashtra.rccms.filing.FilingJsonCodec;
+import com.maharashtra.rccms.filing.OfficeCodeResolver;
 import com.maharashtra.rccms.model.AdvocateRegistration;
 import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
@@ -75,6 +76,7 @@ public class FilingApplicationService {
     private final ApplicationDocumentChecklistService applicationDocumentChecklistService;
     private final DocumentTypeRepository documentTypeRepository;
     private final FilingJsonCodec filingJsonCodec;
+    private final UrbanPrimaryOfficeLookupService urbanPrimaryOfficeLookupService;
 
     public FilingApplicationService(
             FilingApplicationRepository filingApplicationRepository,
@@ -103,7 +105,8 @@ public class FilingApplicationService {
             FilingApplicationChildCleanup filingApplicationChildCleanup,
             ApplicationDocumentChecklistService applicationDocumentChecklistService,
             DocumentTypeRepository documentTypeRepository,
-            FilingJsonCodec filingJsonCodec
+            FilingJsonCodec filingJsonCodec,
+            UrbanPrimaryOfficeLookupService urbanPrimaryOfficeLookupService
     ) {
         this.filingApplicationRepository = filingApplicationRepository;
         this.caseRegistryRepository = caseRegistryRepository;
@@ -132,6 +135,7 @@ public class FilingApplicationService {
         this.applicationDocumentChecklistService = applicationDocumentChecklistService;
         this.documentTypeRepository = documentTypeRepository;
         this.filingJsonCodec = filingJsonCodec;
+        this.urbanPrimaryOfficeLookupService = urbanPrimaryOfficeLookupService;
     }
 
     @Transactional
@@ -183,7 +187,12 @@ public class FilingApplicationService {
         boolean submit = status == ApplicationStatus.SUBMITTED;
         ApplicationFormNestedPayload form = payload.getForm();
         if (form != null) {
-            applyFormHeader(entity, form);
+            List<DisputedLandPayload> landsForOffice = payload.getDisputedLands();
+            if ((landsForOffice == null || landsForOffice.isEmpty()) && form.getDisputedLands() != null) {
+                landsForOffice = form.getDisputedLands();
+            }
+            enrichFormOfficeCodes(form, landsForOffice);
+            applyFormHeader(entity, form, landsForOffice);
             applyApplicants(entity, form.getApplicants(), submit);
             applyRespondents(entity, form.getRespondents(), submit);
             List<VakalatnamaGroupPayload> vakCombined = combineVakalatnama(
@@ -208,7 +217,11 @@ public class FilingApplicationService {
         ApplicationDisputedOrderPayload mergedDisputed = mergeDisputedEnvelope(payload);
         applyDisputedOrder(entity, mergedDisputed);
 
-        applyDisputedLands(entity, payload.getDisputedLands());
+        List<DisputedLandPayload> disputedLandsPayload = payload.getDisputedLands();
+        if ((disputedLandsPayload == null || disputedLandsPayload.isEmpty()) && form != null) {
+            disputedLandsPayload = form.getDisputedLands();
+        }
+        applyDisputedLands(entity, disputedLandsPayload, form != null ? form.getDistrictId() : null);
         fillOfficeFromDisputedLandsIfMissing(entity);
         applyAttachments(entity, payload.getAttachments(), principal.getName());
         storeFormSnapshot(entity, payload);
@@ -964,13 +977,137 @@ public class FilingApplicationService {
         throw new IllegalArgumentException("Not allowed to view this application.");
     }
 
-    private void applyFormHeader(FilingApplication entity, ApplicationFormNestedPayload form) {
-        applyFilingHeader(entity, toFilingHeaderPayload(form));
+    private void applyFormHeader(
+            FilingApplication entity,
+            ApplicationFormNestedPayload form,
+            List<DisputedLandPayload> disputedLands
+    ) {
+        ApplicationFilingHeaderPayload header = toFilingHeaderPayload(form);
+        applyFilingHeader(entity, header);
+    }
+
+    /**
+     * Frontend sends sub-office code only in {@code officeCode}. Resolve primary via ePCIS / master
+     * and set {@code primaryOfficeCode} on form and disputed lands before persist.
+     */
+    private void enrichFormOfficeCodes(ApplicationFormNestedPayload form, List<DisputedLandPayload> disputedLands) {
+        if (form == null) {
+            return;
+        }
+        String sub = trimToNull(form.getOfficeCode());
+        if (sub == null && disputedLands != null) {
+            for (DisputedLandPayload land : disputedLands) {
+                sub = OfficeCodeResolver.subOfficeCode(land);
+                if (sub != null) {
+                    form.setOfficeCode(sub);
+                    break;
+                }
+            }
+        }
+        if (trimToNull(form.getPrimaryOfficeCode()) == null && sub != null) {
+            String primary = resolvePrimaryOfficeCodeForSub(
+                    sub,
+                    resolveDistrictCodeForOfficeLookup(form.getDistrictId(), disputedLands),
+                    disputedLands
+            );
+            if (primary != null) {
+                form.setPrimaryOfficeCode(primary);
+            }
+        }
+        if (disputedLands != null) {
+            for (DisputedLandPayload land : disputedLands) {
+                enrichDisputedLandOfficeCodes(land, form.getDistrictId());
+            }
+            form.setDisputedLands(disputedLands);
+        }
+    }
+
+    private void enrichDisputedLandOfficeCodes(DisputedLandPayload land, Long districtId) {
+        if (land == null) {
+            return;
+        }
+        String sub = OfficeCodeResolver.subOfficeCode(land);
+        if (sub != null) {
+            land.setOfficeCode(sub);
+        }
+        if (trimToNull(land.getPrimaryOfficeCode()) != null) {
+            return;
+        }
+        String primary = OfficeCodeResolver.primaryOfficeCode(land);
+        if (primary == null && sub != null) {
+            primary = resolvePrimaryOfficeCodeForSub(
+                    sub,
+                    firstNonBlankString(land.getDistrictCode(), resolveDistrictLgdCode(districtId)),
+                    List.of(land)
+            );
+        }
+        if (primary != null) {
+            land.setPrimaryOfficeCode(primary);
+        }
+    }
+
+    private String resolvePrimaryOfficeCodeForSub(
+            String subOfficeCode,
+            String districtCode,
+            List<DisputedLandPayload> disputedLands
+    ) {
+        if (disputedLands != null) {
+            for (DisputedLandPayload land : disputedLands) {
+                String fromPayload = OfficeCodeResolver.primaryOfficeCode(land);
+                if (fromPayload != null) {
+                    return fromPayload;
+                }
+            }
+        }
+        String district = trimToNull(districtCode);
+        if (district != null) {
+            Optional<String> fromEpcis = urbanPrimaryOfficeLookupService.resolvePrimaryOfficeCode(district, subOfficeCode);
+            if (fromEpcis.isPresent()) {
+                return fromEpcis.get();
+            }
+        }
+        return officeRepository.findFirstByShortNameIgnoreCase(subOfficeCode)
+                .map(Office::getOfficeCode)
+                .map(FilingApplicationService::trimToNull)
+                .orElse(null);
+    }
+
+    private String resolveDistrictCodeForOfficeLookup(Long districtId, List<DisputedLandPayload> disputedLands) {
+        if (disputedLands != null) {
+            for (DisputedLandPayload land : disputedLands) {
+                String code = trimToNull(land.getDistrictCode());
+                if (code != null) {
+                    return code;
+                }
+            }
+        }
+        return resolveDistrictLgdCode(districtId);
+    }
+
+    private String resolveDistrictLgdCode(Long districtId) {
+        Long id = zeroToNull(districtId);
+        if (id == null) {
+            return null;
+        }
+        return districtRepository.findById(id)
+                .map(District::getLgdCode)
+                .map(FilingApplicationService::trimToNull)
+                .orElse(null);
     }
 
     private void applyFilingHeader(FilingApplication entity, ApplicationFilingHeaderPayload header) {
         if (header == null) {
             return;
+        }
+        if (trimToNull(header.getPrimaryOfficeCode()) == null && trimToNull(header.getOfficeCode()) != null) {
+            String primary = resolvePrimaryOfficeCodeForSub(
+                    header.getOfficeCode(),
+                    resolveDistrictLgdCode(header.getDistrictId()),
+                    null
+            );
+            if (primary != null) {
+                header.setPrimaryOfficeCode(primary);
+            }
         }
         Subject subject = resolveSubject(header.getSubjectId());
         entity.setSubject(subject);
@@ -982,7 +1119,7 @@ public class FilingApplicationService {
         entity.setDistrict(resolveDistrict(header.getDistrictId()));
         entity.setSubdistrict(resolveSubdistrict(header.getSubdistrictId()));
         entity.setTaluka(resolveTaluka(header.getTalukaId()));
-        Office office = resolveOffice(header.getOfficeId(), header.getOfficeCode());
+        Office office = resolveOffice(header.getOfficeId(), header.getOfficeCode(), header.getPrimaryOfficeCode());
         entity.setOffice(office);
         Act act = resolveAct(header.getActId(), header.getActCode());
         entity.setAct(act);
@@ -1002,6 +1139,7 @@ public class FilingApplicationService {
         header.setTalukaId(form.getTalukaId());
         header.setOfficeId(form.getOfficeId());
         header.setOfficeCode(form.getOfficeCode());
+        header.setPrimaryOfficeCode(form.getPrimaryOfficeCode());
         header.setActId(form.getActId());
         header.setActCode(form.getActCode());
         header.setSectionId(form.getSectionId());
@@ -1078,15 +1216,18 @@ public class FilingApplicationService {
         return talukaRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Invalid talukaId."));
     }
 
-    private Office resolveOffice(Long id, String officeCode) {
+    private Office resolveOffice(Long id, String officeCode, String primaryOfficeCode) {
+        String lookupCode = OfficeCodeResolver.masterLookupCode(primaryOfficeCode, officeCode, null);
+        if (lookupCode != null) {
+            return officeRepository.findFirstByOfficeCodeIgnoreCase(lookupCode)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "No master office found for code: " + lookupCode
+                                    + ". Ensure primary office exists in master_office (office_code), "
+                                    + "or map sub-office via short_name."));
+        }
         Long officeId = zeroToNull(id);
         if (officeId != null) {
             return officeRepository.findById(officeId).orElseThrow(() -> new IllegalArgumentException("Invalid officeId."));
-        }
-        String code = trimToNull(officeCode);
-        if (code != null) {
-            return officeRepository.findFirstByOfficeCodeIgnoreCase(code)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid officeCode."));
         }
         return null;
     }
@@ -1139,7 +1280,8 @@ public class FilingApplicationService {
             throw new IllegalArgumentException("subjectId is required for submission.");
         }
         if (entity.getOffice() == null) {
-            throw new IllegalArgumentException("officeId or officeCode is required for submission.");
+            throw new IllegalArgumentException(
+                    "officeId, primaryOfficeCode, or officeCode is required for submission.");
         }
         if (entity.getAct() == null) {
             throw new IllegalArgumentException("actId or actCode is required for submission.");
@@ -1536,12 +1678,13 @@ public class FilingApplicationService {
         row.setSnapshotLawFirmName(trimToNull(s.getLawFirmName()));
     }
 
-    private void applyDisputedLands(FilingApplication app, List<DisputedLandPayload> lands) {
+    private void applyDisputedLands(FilingApplication app, List<DisputedLandPayload> lands, Long districtId) {
         if (lands == null || lands.isEmpty()) {
             return;
         }
         int line = 1;
         for (DisputedLandPayload lp : lands) {
+            enrichDisputedLandOfficeCodes(lp, districtId);
             ApplicationDisputedLand row = new ApplicationDisputedLand();
             row.setApplication(app);
             String landTypeRaw = normalizeLandType(lp.getLandType());
@@ -1565,7 +1708,14 @@ public class FilingApplicationService {
             row.setPin7(trimToNull(lp.getPin7()));
             row.setPin8(trimToNull(lp.getPin8()));
 
-            row.setOfficeCode(trimToNull(lp.getOfficeCode()));
+            row.setOfficeCode(OfficeCodeResolver.subOfficeCode(lp));
+            String primary = OfficeCodeResolver.primaryOfficeCode(lp);
+            if (primary == null) {
+                String sub = row.getOfficeCode();
+                String districtCode = firstNonBlankString(row.getDistrictCode(), resolveDistrictLgdCode(districtId));
+                primary = resolvePrimaryOfficeCodeForSub(sub, districtCode, List.of(lp));
+            }
+            row.setPrimaryOfficeCode(primary);
             row.setOfficeName(trimToNull(lp.getOfficeName()));
             row.setVillageCode(trimToNull(lp.getVillageCode()));
             row.setCtsNo(trimToNull(lp.getCtsNo()));
@@ -1582,13 +1732,13 @@ public class FilingApplicationService {
             return;
         }
         for (ApplicationDisputedLand land : app.getDisputedLands()) {
-            String officeCode = trimToNull(land.getOfficeCode());
-            if (officeCode == null) {
+            String lookupCode = OfficeCodeResolver.masterLookupCode(land, filingJsonCodec);
+            if (lookupCode == null) {
                 continue;
             }
-            Office office = officeRepository.findFirstByOfficeCodeIgnoreCase(officeCode)
+            Office office = officeRepository.findFirstByOfficeCodeIgnoreCase(lookupCode)
                     .orElseThrow(() -> new IllegalArgumentException(
-                            "Invalid disputedLands officeCode: " + officeCode));
+                            "Invalid disputedLands office code (expected primary office): " + lookupCode));
             app.setOffice(office);
             return;
         }
@@ -1967,6 +2117,16 @@ public class FilingApplicationService {
         form.setTalukaId(app.getTaluka() != null ? app.getTaluka().getId() : null);
         form.setOfficeId(app.getOffice() != null ? app.getOffice().getId() : null);
         form.setOfficeCode(app.getOffice() != null ? trimToNull(app.getOffice().getOfficeCode()) : null);
+        if (!app.getDisputedLands().isEmpty()) {
+            ApplicationDisputedLand firstUrban = app.getDisputedLands().stream()
+                    .filter(l -> trimToNull(l.getOfficeCode()) != null || trimToNull(l.getPrimaryOfficeCode()) != null)
+                    .findFirst()
+                    .orElse(null);
+            if (firstUrban != null) {
+                form.setOfficeCode(trimToNull(firstUrban.getOfficeCode()));
+                form.setPrimaryOfficeCode(trimToNull(firstUrban.getPrimaryOfficeCode()));
+            }
+        }
         form.setActId(app.getAct() != null ? app.getAct().getId() : null);
         form.setActCode(app.getAct() != null ? trimToNull(app.getAct().getActCode()) : null);
         form.setSectionId(app.getSection() != null ? app.getSection().getId() : null);
@@ -2238,6 +2398,7 @@ public class FilingApplicationService {
             dto.setPin7(row.getPin7());
             dto.setPin8(row.getPin8());
             dto.setOfficeCode(row.getOfficeCode());
+            dto.setPrimaryOfficeCode(row.getPrimaryOfficeCode());
             dto.setOfficeName(row.getOfficeName());
             dto.setVillageCode(row.getVillageCode());
             dto.setCtsNo(row.getCtsNo());

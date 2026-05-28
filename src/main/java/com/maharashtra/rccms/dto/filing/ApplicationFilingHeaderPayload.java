@@ -12,6 +12,7 @@ public class ApplicationFilingHeaderPayload {
     private Long talukaId;
     private Long officeId;
     private String officeCode;
+    private String primaryOfficeCode;
     private Long actId;
     private String actCode;
     private Long sectionId;
@@ -74,6 +75,14 @@ public class ApplicationFilingHeaderPayload {
 
     public void setOfficeCode(String officeCode) {
         this.officeCode = officeCode;
+    }
+
+    public String getPrimaryOfficeCode() {
+        return primaryOfficeCode;
+    }
+
+    public void setPrimaryOfficeCode(String primaryOfficeCode) {
+        this.primaryOfficeCode = primaryOfficeCode;
     }
 
     public Long getActId() {

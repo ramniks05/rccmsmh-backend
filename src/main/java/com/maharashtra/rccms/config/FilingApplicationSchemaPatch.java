@@ -52,6 +52,7 @@ public class FilingApplicationSchemaPatch implements ApplicationRunner {
         addColumn("application_disputed_land", "area_unit", "ALTER TABLE application_disputed_land ADD COLUMN area_unit VARCHAR(32)");
         addColumn("application_disputed_land", "land_holders_text", "ALTER TABLE application_disputed_land ADD COLUMN land_holders_text VARCHAR(2048)");
         addColumn("application_disputed_land", "land_detail_json", "ALTER TABLE application_disputed_land ADD COLUMN land_detail_json TEXT");
+        addColumn("application_disputed_land", "primary_office_code", "ALTER TABLE application_disputed_land ADD COLUMN primary_office_code VARCHAR(64)");
     }
 
     private void ensureDescriptionParagraphTable() {

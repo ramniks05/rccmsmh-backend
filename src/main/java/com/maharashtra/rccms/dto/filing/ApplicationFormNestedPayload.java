@@ -21,6 +21,8 @@ public class ApplicationFormNestedPayload {
     private Long talukaId;
     private Long officeId;
     private String officeCode;
+    @JsonAlias({"primary_office_code", "Primary_Office_Code", "parent_office_code"})
+    private String primaryOfficeCode;
 
     private Long actId;
     private String actCode;
@@ -97,6 +99,14 @@ public class ApplicationFormNestedPayload {
 
     public void setOfficeCode(String officeCode) {
         this.officeCode = officeCode;
+    }
+
+    public String getPrimaryOfficeCode() {
+        return primaryOfficeCode;
+    }
+
+    public void setPrimaryOfficeCode(String primaryOfficeCode) {
+        this.primaryOfficeCode = primaryOfficeCode;
     }
 
     public Long getActId() {

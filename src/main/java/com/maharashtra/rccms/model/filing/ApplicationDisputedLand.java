@@ -84,6 +84,10 @@ public class ApplicationDisputedLand {
     @Column(name = "office_code", length = 64)
     private String officeCode;
 
+    /** Parent / tahsil office code for routing (ePCIS primary_office_code). */
+    @Column(name = "primary_office_code", length = 64)
+    private String primaryOfficeCode;
+
     @Column(name = "office_name", length = 512)
     private String officeName;
 
@@ -276,6 +280,14 @@ public class ApplicationDisputedLand {
 
     public void setOfficeCode(String officeCode) {
         this.officeCode = officeCode;
+    }
+
+    public String getPrimaryOfficeCode() {
+        return primaryOfficeCode;
+    }
+
+    public void setPrimaryOfficeCode(String primaryOfficeCode) {
+        this.primaryOfficeCode = primaryOfficeCode;
     }
 
     public String getOfficeName() {

@@ -2554,7 +2554,7 @@ public class FilingApplicationService {
         int year = app.getSubmittedAt() != null
                 ? app.getSubmittedAt().atZone(java.time.ZoneOffset.UTC).getYear()
                 : java.time.Year.now(java.time.ZoneOffset.UTC).getValue();
-        return String.format(Locale.ROOT, "APP/%04d/%06d", year, app.getId());
+        return String.format(Locale.ROOT, "%04d/%06d", year, app.getId());
     }
 
     private static String buildCaseNumber(CaseRegistry row) {

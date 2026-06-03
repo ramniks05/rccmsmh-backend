@@ -151,12 +151,16 @@ public class WorkflowContextService {
         if (judgment != null) {
             judgmentCtx.setArtifactId(judgment.getId());
             judgmentCtx.setStatus(judgment.getStatus() != null ? judgment.getStatus().name() : null);
+            judgmentCtx.setDraftSummary(judgment.getDraftSummary());
         }
         judgmentCtx.setConfig(def.getJudgment());
         judgmentCtx.setAllowedActions(workflowPolicyService.judgmentAllowed(caseRow, posting, judgment));
         judgmentCtx.setEditable(workflowPolicyService.judgmentEditable(caseRow, posting, judgment));
         judgmentCtx.setSubmittable(workflowPolicyService.judgmentSubmittable(caseRow, posting, judgment));
         judgmentCtx.setActorRole(workflowPolicyService.resolveOfficerActorRole(posting));
+        judgmentCtx.setPendingFromActorRole(
+                workflowPolicyService.judgmentPendingFromActor(caseRow, posting, judgment)
+        );
         out.setJudgment(judgmentCtx);
 
         List<WorkflowHearingContextResponse> hearingRows = new ArrayList<>();

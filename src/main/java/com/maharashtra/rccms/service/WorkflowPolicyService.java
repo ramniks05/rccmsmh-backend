@@ -201,10 +201,15 @@ public class WorkflowPolicyService {
         boolean po = isPo(posting);
         boolean clerk = isClerk(posting);
 
-        if (caseRow != null && po && "READY_FOR_JUDGMENT".equalsIgnoreCase(caseRow.getStatus())) {
-            if (row == null || row.getStatus() == null || row.getStatus() == CaseJudgmentWorkflowStatus.PO_DRAFT) {
+        if (caseRow != null && po && "READY_FOR_JUDGMENT".equalsIgnoreCase(trimStatus(caseRow.getStatus()))) {
+            if (row == null || row.getStatus() == null) {
+                actions.add(WorkflowAction.PO_DRAFT_JUDGMENT);
+                return toNames(actions);
+            }
+            if (row.getStatus() == CaseJudgmentWorkflowStatus.PO_DRAFT) {
                 actions.add(WorkflowAction.PO_DRAFT_JUDGMENT);
                 actions.add(WorkflowAction.UPDATE_PO_JUDGMENT);
+                actions.add(WorkflowAction.SEND_JUDGMENT_TO_CLERK);
                 return toNames(actions);
             }
         }
@@ -231,6 +236,7 @@ public class WorkflowPolicyService {
                 actions.add(WorkflowAction.CLERK_UPDATE_JUDGMENT);
                 actions.add(WorkflowAction.SUBMIT_JUDGMENT_TO_PO);
             } else if (status == CaseJudgmentWorkflowStatus.CLERK_DRAFT && po) {
+                actions.add(WorkflowAction.UPDATE_PO_JUDGMENT);
                 actions.add(WorkflowAction.REVERT_JUDGMENT_TO_CLERK);
             } else if (status == CaseJudgmentWorkflowStatus.PO_SCRUTINY && po) {
                 actions.add(WorkflowAction.UPDATE_PO_JUDGMENT);
@@ -261,7 +267,7 @@ public class WorkflowPolicyService {
 
     /**
      * Whether the current login may edit judgment text. Based on workflow status + role,
-     * not only {@link #judgmentAllowed} (avoids false when designation/allowedActions mismatch).
+     * not only judgmentAllowed (avoids false when designation/allowedActions mismatch).
      */
     public boolean judgmentEditable(CaseRegistry caseRow, EmployeePosting posting, CaseJudgmentWorkflow row) {
         if (caseRow == null || "DISPOSED".equalsIgnoreCase(trimStatus(caseRow.getStatus()))) {
@@ -275,8 +281,12 @@ public class WorkflowPolicyService {
             return status == CaseJudgmentWorkflowStatus.CLERK_DRAFT;
         }
         if (isPo(posting)) {
-            return status == CaseJudgmentWorkflowStatus.PO_DRAFT
-                    || status == CaseJudgmentWorkflowStatus.PO_SCRUTINY;
+            if (status == CaseJudgmentWorkflowStatus.PO_DRAFT
+                    || status == CaseJudgmentWorkflowStatus.PO_SCRUTINY) {
+                return true;
+            }
+            return status == CaseJudgmentWorkflowStatus.CLERK_DRAFT
+                    && "PO_THEN_CLERK".equalsIgnoreCase(definitionFor(caseRow).getJudgment().getMode());
         }
         return false;
     }
@@ -288,12 +298,24 @@ public class WorkflowPolicyService {
         return isClerk(posting);
     }
 
-    public String resolveOfficerActorRole(EmployeePosting posting) {
-        return isPo(posting) ? "PRESIDING_OFFICER" : "CLERK";
+    /**
+     * When the current login cannot act yet, which role must complete the next step (e.g. clerk waiting on PO send).
+     */
+    public String judgmentPendingFromActor(CaseRegistry caseRow, EmployeePosting posting, CaseJudgmentWorkflow row) {
+        if (caseRow == null || row == null || row.getStatus() == null) {
+            return null;
+        }
+        if (isClerk(posting) && row.getStatus() == CaseJudgmentWorkflowStatus.PO_DRAFT) {
+            return "PRESIDING_OFFICER";
+        }
+        if (isPo(posting) && row.getStatus() == CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
+            return "CLERK";
+        }
+        return null;
     }
 
-    private static String trimStatus(String value) {
-        return value != null ? value.trim() : null;
+    public String resolveOfficerActorRole(EmployeePosting posting) {
+        return isPo(posting) ? "PRESIDING_OFFICER" : "CLERK";
     }
 
     public static Set<CaseNoticeStatus> editableNoticeStatuses() {
@@ -303,6 +325,10 @@ public class WorkflowPolicyService {
     private static boolean poOnlyNotice(CaseWorkflowDefinition def) {
         return def.getNotice().getMode() == null
                 || "PO_ONLY".equalsIgnoreCase(def.getNotice().getMode());
+    }
+
+    private static String trimStatus(String value) {
+        return value != null ? value.trim() : null;
     }
 
     private static List<String> toNames(Set<WorkflowAction> actions) {

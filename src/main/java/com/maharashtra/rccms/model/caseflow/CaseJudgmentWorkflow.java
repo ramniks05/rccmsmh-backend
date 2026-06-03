@@ -34,7 +34,7 @@ public class CaseJudgmentWorkflow {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
-    private CaseJudgmentWorkflowStatus status = CaseJudgmentWorkflowStatus.CLERK_DRAFT;
+    private CaseJudgmentWorkflowStatus status = CaseJudgmentWorkflowStatus.PO_DRAFT;
 
     @Column(name = "draft_summary", columnDefinition = "TEXT")
     private String draftSummary;

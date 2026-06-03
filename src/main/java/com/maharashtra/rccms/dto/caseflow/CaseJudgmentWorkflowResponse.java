@@ -17,7 +17,7 @@ public class CaseJudgmentWorkflowResponse {
     private Instant publishedAt;
     private Instant updatedAt;
     private List<String> allowedActions = new ArrayList<>();
-    /** True when current login may edit judgment text (clerk: CLERK_DRAFT; PO: PO_DRAFT / PO_SCRUTINY). */
+    /** True when current login may edit judgment text (clerk: CLERK_DRAFT; PO: PO_DRAFT / CLERK_DRAFT / PO_SCRUTINY). */
     private boolean editable;
     /** True when clerk may submit to PO (CLERK_DRAFT only). */
     private boolean submittable;

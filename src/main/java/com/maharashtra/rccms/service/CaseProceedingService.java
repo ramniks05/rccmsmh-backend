@@ -476,15 +476,21 @@ public class CaseProceedingService {
 
         CaseJudgmentWorkflowStatus from = row.getStatus();
         boolean po = workflowPolicyService.isPo(posting);
+        boolean poThenClerk = "PO_THEN_CLERK".equalsIgnoreCase(
+                workflowPolicyService.definitionFor(caseRow).getJudgment().getMode());
         if (po) {
+            boolean newRow = row.getId() == null;
+            boolean poMayEditClerkDraft = poThenClerk && from == CaseJudgmentWorkflowStatus.CLERK_DRAFT;
             if (from != null
                     && from != CaseJudgmentWorkflowStatus.PO_DRAFT
-                    && from != CaseJudgmentWorkflowStatus.PO_SCRUTINY) {
+                    && from != CaseJudgmentWorkflowStatus.PO_SCRUTINY
+                    && !poMayEditClerkDraft) {
                 throw new IllegalArgumentException(
-                        "PO can edit judgment draft only before sending to clerk, or while reviewing clerk draft (PO_SCRUTINY)."
+                        "PO can edit judgment draft only before sending to clerk, while clerk is drafting, or while reviewing clerk draft (PO_SCRUTINY)."
                 );
             }
-            WorkflowAction draftAction = from == null || from == CaseJudgmentWorkflowStatus.PO_DRAFT
+            boolean poDraftPhase = newRow || from == null || from == CaseJudgmentWorkflowStatus.PO_DRAFT;
+            WorkflowAction draftAction = poDraftPhase
                     ? WorkflowAction.PO_DRAFT_JUDGMENT
                     : WorkflowAction.UPDATE_PO_JUDGMENT;
             requireCaseAction(caseRow, posting, null, null,
@@ -493,7 +499,7 @@ public class CaseProceedingService {
                     draftAction);
             row.setDraftSummary(summary.trim());
             row.setDraftedByLoginId(login);
-            if (from == null || from == CaseJudgmentWorkflowStatus.PO_DRAFT) {
+            if (poDraftPhase) {
                 row.setStatus(CaseJudgmentWorkflowStatus.PO_DRAFT);
             }
             row = caseJudgmentWorkflowRepository.save(row);
@@ -501,13 +507,16 @@ public class CaseProceedingService {
             return enrichJudgmentResponse(caseRow, row, posting);
         }
 
+        assertClerk(posting);
+        if (row.getStatus() != CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
+            throw new IllegalArgumentException(
+                    "Judgment can be edited by clerk only after PO sends the draft (workflowStatus must be CLERK_DRAFT)."
+            );
+        }
         requireCaseAction(caseRow, posting, null, null,
                 caseOrderSheetRepository.findByCaseRegistryId(caseId).orElse(null),
                 row,
                 WorkflowAction.CLERK_UPDATE_JUDGMENT);
-        if (row.getStatus() != CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException("Judgment can be edited by clerk only when sent from PO.");
-        }
         row.setDraftSummary(summary.trim());
         row.setDraftedByLoginId(login);
         row = caseJudgmentWorkflowRepository.save(row);
@@ -556,7 +565,14 @@ public class CaseProceedingService {
                 row,
                 WorkflowAction.SUBMIT_JUDGMENT_TO_PO);
         if (row.getStatus() != CaseJudgmentWorkflowStatus.CLERK_DRAFT) {
-            throw new IllegalArgumentException("Only clerk draft judgment can be submitted to PO scrutiny.");
+            throw new IllegalArgumentException(
+                    "Only clerk draft judgment can be submitted to PO scrutiny (workflowStatus must be CLERK_DRAFT)."
+            );
+        }
+        if (trimToNull(row.getDraftSummary()) == null) {
+            throw new IllegalArgumentException(
+                    "Judgment draft summary is required before submitting to PO review."
+            );
         }
         CaseJudgmentWorkflowStatus from = row.getStatus();
         row.setStatus(CaseJudgmentWorkflowStatus.PO_SCRUTINY);

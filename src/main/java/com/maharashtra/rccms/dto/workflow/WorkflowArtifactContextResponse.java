@@ -20,6 +20,10 @@ public class WorkflowArtifactContextResponse {
     private boolean submittable;
     /** PRESIDING_OFFICER or CLERK for current login (designation-based). */
     private String actorRole;
+    /** Role that must act next when {@link #allowedActions} is empty for current login (e.g. PO_DRAFT while clerk is viewing). */
+    private String pendingFromActorRole;
+    /** Judgment draft text for read-only preview in workflow context. */
+    private String draftSummary;
     private Object config;
 
     public String getArtifact() {
@@ -108,6 +112,22 @@ public class WorkflowArtifactContextResponse {
 
     public void setActorRole(String actorRole) {
         this.actorRole = actorRole;
+    }
+
+    public String getPendingFromActorRole() {
+        return pendingFromActorRole;
+    }
+
+    public void setPendingFromActorRole(String pendingFromActorRole) {
+        this.pendingFromActorRole = pendingFromActorRole;
+    }
+
+    public String getDraftSummary() {
+        return draftSummary;
+    }
+
+    public void setDraftSummary(String draftSummary) {
+        this.draftSummary = draftSummary;
     }
 
     public Object getConfig() {

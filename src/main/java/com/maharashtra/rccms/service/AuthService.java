@@ -5,15 +5,14 @@ import com.maharashtra.rccms.dto.AuthResponse;
 import com.maharashtra.rccms.model.AdvocateRegistration;
 import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
-import com.maharashtra.rccms.model.OfficerRegistration;
 import com.maharashtra.rccms.model.PartyInPersonRegistration;
 import com.maharashtra.rccms.model.UserRole;
 import com.maharashtra.rccms.repository.AdvocateRegistrationRepository;
 import com.maharashtra.rccms.repository.EmployeePostingRepository;
 import com.maharashtra.rccms.repository.EmployeeRepository;
-import com.maharashtra.rccms.repository.OfficerRegistrationRepository;
 import com.maharashtra.rccms.repository.PartyInPersonRegistrationRepository;
 import com.maharashtra.rccms.security.JwtService;
+import com.maharashtra.rccms.util.EmployeeLoginSupport;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -28,7 +27,6 @@ public class AuthService {
 
     private final AdvocateRegistrationRepository advocateRegistrationRepository;
     private final PartyInPersonRegistrationRepository partyInPersonRegistrationRepository;
-    private final OfficerRegistrationRepository officerRegistrationRepository;
     private final EmployeeRepository employeeRepository;
     private final EmployeePostingRepository employeePostingRepository;
     private final PasswordEncoder passwordEncoder;
@@ -39,7 +37,6 @@ public class AuthService {
     public AuthService(
             AdvocateRegistrationRepository advocateRegistrationRepository,
             PartyInPersonRegistrationRepository partyInPersonRegistrationRepository,
-            OfficerRegistrationRepository officerRegistrationRepository,
             EmployeeRepository employeeRepository,
             EmployeePostingRepository employeePostingRepository,
             PasswordEncoder passwordEncoder,
@@ -49,7 +46,6 @@ public class AuthService {
     ) {
         this.advocateRegistrationRepository = advocateRegistrationRepository;
         this.partyInPersonRegistrationRepository = partyInPersonRegistrationRepository;
-        this.officerRegistrationRepository = officerRegistrationRepository;
         this.employeeRepository = employeeRepository;
         this.employeePostingRepository = employeePostingRepository;
         this.passwordEncoder = passwordEncoder;
@@ -99,17 +95,20 @@ public class AuthService {
     }
 
     private AuthResponse loginOfficer(String loginId, String password) {
-        String email = normalizeEmail(loginId);
-        OfficerRegistration user = officerRegistrationRepository.findByEmail(email)
+        Employee employee = EmployeeLoginSupport.findByLoginId(employeeRepository, loginId)
                 .orElseThrow(() -> new IllegalArgumentException(INVALID_CREDENTIALS));
-        assertPassword(password, user.getPasswordHash());
-        EmployeePosting posting = resolveOfficerCurrentPosting(email);
+        assertPassword(password, employee.getPasswordHash());
+        if (Boolean.FALSE.equals(employee.getIsActive())) {
+            throw new IllegalArgumentException(INVALID_CREDENTIALS);
+        }
+        String officerLoginId = EmployeeLoginSupport.buildLoginId(employee.getEmail(), employee.getEmployeeCode());
+        EmployeePosting posting = resolveOfficerCurrentPosting(employee);
         Long designationId = posting != null && posting.getDesignation() != null ? posting.getDesignation().getId() : null;
         String designationName = posting != null && posting.getDesignation() != null ? posting.getDesignation().getName() : null;
         Long officeId = posting != null && posting.getOffice() != null ? posting.getOffice().getId() : null;
         String officeName = posting != null && posting.getOffice() != null ? posting.getOffice().getName() : null;
         String officeCode = posting != null && posting.getOffice() != null ? posting.getOffice().getOfficeCode() : null;
-        return buildAuthResponse(user.getEmail(), user.getFullName(), UserRole.OFFICER, designationId, designationName,
+        return buildAuthResponse(officerLoginId, employee.getFullName(), UserRole.OFFICER, designationId, designationName,
                 officeId, officeName, officeCode);
     }
 
@@ -166,24 +165,12 @@ public class AuthService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private EmployeePosting resolveOfficerCurrentPosting(String login) {
-        Employee employee = resolveOfficerEmployee(login);
-        if (employee == null || employee.getId() == null) {
+    private EmployeePosting resolveOfficerCurrentPosting(Employee employee) {
+        if (employee.getId() == null) {
             return null;
         }
         return employeePostingRepository.findFirstByEmployeeIdAndToDateIsNull(employee.getId())
                 .orElse(null);
-    }
-
-    private Employee resolveOfficerEmployee(String login) {
-        if (login.endsWith("@officer.local")) {
-            String employeeCode = login.substring(0, login.length() - "@officer.local".length()).trim();
-            if (hasText(employeeCode)) {
-                return employeeRepository.findFirstByEmployeeCodeIgnoreCase(employeeCode)
-                        .orElse(null);
-            }
-        }
-        return employeeRepository.findFirstByEmailIgnoreCase(login).orElse(null);
     }
 
     private void validateRequest(AuthLoginRequest request) {

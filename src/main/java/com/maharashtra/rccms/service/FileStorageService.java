@@ -1,7 +1,10 @@
 package com.maharashtra.rccms.service;
 
 import com.maharashtra.rccms.dto.FileUploadResponse;
+import com.maharashtra.rccms.dto.StoredFileResource;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -89,6 +92,79 @@ public class FileStorageService {
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to store uploaded file.", ex);
         }
+    }
+
+    /**
+     * Loads a previously stored file by {@code storageKey} returned from {@link #store}.
+     * Resolves paths only under {@code rccms.files.upload-dir}; rejects path traversal.
+     */
+    public StoredFileResource load(String storageKey, String preferredFileName) {
+        if (storageKey == null || storageKey.isBlank()) {
+            throw new IllegalArgumentException("storageKey is required.");
+        }
+        Path filePath = resolveStoragePath(storageKey.trim());
+        if (!Files.isRegularFile(filePath)) {
+            throw new IllegalArgumentException("File not found for storageKey.");
+        }
+
+        String fileName = sanitizeOriginalFileName(
+                preferredFileName != null && !preferredFileName.isBlank()
+                        ? preferredFileName
+                        : filePath.getFileName().toString()
+        );
+        String extension = extractExtension(fileName);
+        if (extension.isEmpty()) {
+            extension = extractExtension(filePath.getFileName().toString());
+        }
+        String mimeType = probeMimeType(filePath, extension);
+
+        try {
+            long size = Files.size(filePath);
+            Resource resource = new FileSystemResource(filePath);
+            return new StoredFileResource(resource, fileName, mimeType, size);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to read stored file.", ex);
+        }
+    }
+
+    /**
+     * Maps a persisted storageKey to an on-disk path under the configured upload root.
+     * Supports keys with or without the upload-root folder prefix (e.g. {@code uploads/...}).
+     */
+    public Path resolveStoragePath(String storageKey) {
+        String normalized = storageKey.trim().replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+
+        String rootFolder = uploadRoot.getFileName().toString();
+        String relativeKey = normalized;
+        if (normalized.startsWith(rootFolder + "/")) {
+            relativeKey = normalized.substring(rootFolder.length() + 1);
+        } else if (normalized.startsWith("uploads/")) {
+            relativeKey = normalized.substring("uploads/".length());
+        }
+
+        Path resolved = uploadRoot.resolve(relativeKey.replace('/', java.io.File.separatorChar)).normalize();
+        if (!resolved.startsWith(uploadRoot)) {
+            throw new IllegalArgumentException("Invalid storageKey.");
+        }
+        return resolved;
+    }
+
+    private static String probeMimeType(Path filePath, String extension) {
+        try {
+            String probed = Files.probeContentType(filePath);
+            if (probed != null && !probed.isBlank()) {
+                return probed;
+            }
+        } catch (IOException ignored) {
+            // fall back to extension guess
+        }
+        if (!extension.isEmpty()) {
+            return guessMimeType(extension);
+        }
+        return "application/octet-stream";
     }
 
     private static String normalizeCategory(String category) {

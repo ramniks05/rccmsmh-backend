@@ -8,9 +8,10 @@ import com.maharashtra.rccms.model.UserRole;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.State;
 import com.maharashtra.rccms.repository.AdvocateRegistrationRepository;
-import com.maharashtra.rccms.repository.OfficerRegistrationRepository;
+import com.maharashtra.rccms.repository.EmployeeRepository;
 import com.maharashtra.rccms.repository.PartyInPersonRegistrationRepository;
 import com.maharashtra.rccms.util.AdvocateRegistrationSupport;
+import com.maharashtra.rccms.util.EmployeeLoginSupport;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -24,20 +25,20 @@ public class RegistrationService {
 
     private final AdvocateRegistrationRepository advocateRegistrationRepository;
     private final PartyInPersonRegistrationRepository partyInPersonRegistrationRepository;
-    private final OfficerRegistrationRepository officerRegistrationRepository;
+    private final EmployeeRepository employeeRepository;
     private final PasswordEncoder passwordEncoder;
     private final LgdMasterLookupService lgdMasterLookupService;
 
     public RegistrationService(
             AdvocateRegistrationRepository advocateRegistrationRepository,
             PartyInPersonRegistrationRepository partyInPersonRegistrationRepository,
-            OfficerRegistrationRepository officerRegistrationRepository,
+            EmployeeRepository employeeRepository,
             PasswordEncoder passwordEncoder,
             LgdMasterLookupService lgdMasterLookupService
     ) {
         this.advocateRegistrationRepository = advocateRegistrationRepository;
         this.partyInPersonRegistrationRepository = partyInPersonRegistrationRepository;
-        this.officerRegistrationRepository = officerRegistrationRepository;
+        this.employeeRepository = employeeRepository;
         this.passwordEncoder = passwordEncoder;
         this.lgdMasterLookupService = lgdMasterLookupService;
     }
@@ -264,7 +265,7 @@ public class RegistrationService {
     private boolean emailExistsAnywhere(String email) {
         return advocateRegistrationRepository.existsByEmail(email)
                 || partyInPersonRegistrationRepository.existsByEmail(email)
-                || officerRegistrationRepository.existsByEmail(email);
+                || EmployeeLoginSupport.findByLoginId(employeeRepository, email).isPresent();
     }
 
     private void validateText(String value, String message) {

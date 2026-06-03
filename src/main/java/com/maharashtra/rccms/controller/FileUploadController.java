@@ -1,11 +1,15 @@
 package com.maharashtra.rccms.controller;
 
 import com.maharashtra.rccms.dto.FileUploadResponse;
+import com.maharashtra.rccms.dto.StoredFileResource;
 import com.maharashtra.rccms.service.FileStorageService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -14,12 +18,16 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Stores uploaded files on disk and returns a storageKey for registration / filing payloads.
- * POST /api/files/upload is public so advocate registration (pre-login) can upload certificates.
+ * File upload/download for registration certificates and filing application attachments.
+ * <p>
+ * Flow: {@code POST /upload} stores the binary and returns {@code storageKey};
+ * {@code POST /api/filing-applications/save} persists that key on {@code application_attachment};
+ * {@code GET /download} streams the file back using the same {@code storageKey}.
  */
 @RestController
 @RequestMapping("/api/files")
@@ -52,6 +60,33 @@ public class FileUploadController {
             String resolvedCategory = firstNonBlank(category, purpose);
             FileUploadResponse result = fileStorageService.store(resolved, resolvedCategory);
             return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.internalServerError().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    /**
+     * Download a file previously uploaded via {@link #upload}.
+     * Requires authentication (JWT). Pass the {@code storageKey} from upload or application preview.
+     */
+    @GetMapping("/download")
+    public ResponseEntity<?> download(
+            @RequestParam("storageKey") String storageKey,
+            @RequestParam(value = "fileName", required = false) String fileName,
+            @RequestParam(value = "inline", defaultValue = "false") boolean inline
+    ) {
+        try {
+            StoredFileResource stored = fileStorageService.load(storageKey, fileName);
+            ContentDisposition disposition = (inline ? ContentDisposition.inline() : ContentDisposition.attachment())
+                    .filename(stored.getFileName(), StandardCharsets.UTF_8)
+                    .build();
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                    .contentType(MediaType.parseMediaType(stored.getMimeType()))
+                    .contentLength(stored.getSize())
+                    .body(stored.getResource());
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         } catch (IllegalStateException ex) {

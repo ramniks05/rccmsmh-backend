@@ -8,16 +8,16 @@ import com.maharashtra.rccms.dto.EmployeeResponse;
 import com.maharashtra.rccms.dto.EmployeeUpdateRequest;
 import com.maharashtra.rccms.model.Employee;
 import com.maharashtra.rccms.model.EmployeePosting;
-import com.maharashtra.rccms.model.OfficerRegistration;
 import com.maharashtra.rccms.model.master.Designation;
 import com.maharashtra.rccms.model.master.Office;
 import com.maharashtra.rccms.model.master.OfficeBranch;
 import com.maharashtra.rccms.repository.DesignationRepository;
 import com.maharashtra.rccms.repository.EmployeePostingRepository;
 import com.maharashtra.rccms.repository.EmployeeRepository;
-import com.maharashtra.rccms.repository.OfficerRegistrationRepository;
 import com.maharashtra.rccms.repository.OfficeBranchRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
+import com.maharashtra.rccms.service.EmployeeLoginRepairService;
+import com.maharashtra.rccms.util.EmployeeLoginSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -40,15 +40,14 @@ import java.util.Objects;
 @RequestMapping("/api/admin/employees")
 @SuppressWarnings("null")
 public class AdminEmployeeController {
-    private static final String DEFAULT_OFFICER_PASSWORD = "Officer@123";
 
     private final EmployeeRepository employeeRepository;
     private final EmployeePostingRepository employeePostingRepository;
     private final OfficeRepository officeRepository;
     private final OfficeBranchRepository officeBranchRepository;
     private final DesignationRepository designationRepository;
-    private final OfficerRegistrationRepository officerRegistrationRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmployeeLoginRepairService employeeLoginRepairService;
 
     public AdminEmployeeController(
             EmployeeRepository employeeRepository,
@@ -56,44 +55,36 @@ public class AdminEmployeeController {
             OfficeRepository officeRepository,
             OfficeBranchRepository officeBranchRepository,
             DesignationRepository designationRepository,
-            OfficerRegistrationRepository officerRegistrationRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            EmployeeLoginRepairService employeeLoginRepairService
     ) {
         this.employeeRepository = employeeRepository;
         this.employeePostingRepository = employeePostingRepository;
         this.officeRepository = officeRepository;
         this.officeBranchRepository = officeBranchRepository;
         this.designationRepository = designationRepository;
-        this.officerRegistrationRepository = officerRegistrationRepository;
         this.passwordEncoder = passwordEncoder;
+        this.employeeLoginRepairService = employeeLoginRepairService;
     }
 
     @PostMapping
     @Transactional
     public ResponseEntity<?> createEmployee(@RequestBody EmployeeCreateRequest request) {
         try {
+            String officerLoginId = EmployeeLoginSupport.buildLoginId(request.getEmail(), request.getEmployeeCode());
+            assertLoginIdAvailable(officerLoginId, null);
+
             Employee employee = new Employee();
             applyEmployeeFields(employee, request.getEmployeeCode(), request.getFullName(), request.getFullNameLocal(),
                     request.getMobile(), request.getEmail(), true);
-            String officerLoginId = buildOfficerLoginId(request.getEmail(), request.getEmployeeCode());
-            if (officerRegistrationRepository.existsByEmail(officerLoginId)) {
-                throw new IllegalArgumentException("Officer login ID already exists.");
-            }
+            employee.setPasswordHash(passwordEncoder.encode(EmployeeLoginSupport.DEFAULT_OFFICER_PASSWORD));
             employee = employeeRepository.save(employee);
-
-            OfficerRegistration officerRegistration = new OfficerRegistration();
-            officerRegistration.setFullName(employee.getFullName());
-            officerRegistration.setEmail(officerLoginId);
-            officerRegistration.setMobileNumber(trimToFallback(employee.getMobile(), "9999999999"));
-            officerRegistration.setAddress("Assigned by admin");
-            officerRegistration.setPasswordHash(passwordEncoder.encode(DEFAULT_OFFICER_PASSWORD));
-            officerRegistrationRepository.save(officerRegistration);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "employee", toEmployeeResponse(employee),
                     "userId", officerLoginId,
-                    "defaultPassword", DEFAULT_OFFICER_PASSWORD,
-                    "message", "Employee and officer login created successfully."
+                    "defaultPassword", EmployeeLoginSupport.DEFAULT_OFFICER_PASSWORD,
+                    "message", "Employee created with login credentials."
             ));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -110,27 +101,31 @@ public class AdminEmployeeController {
     }
 
     /**
-     * Creates or repairs {@code officer_registration} for an existing employee and sets login password
-     * to the default ({@value #DEFAULT_OFFICER_PASSWORD}). Use when employee row exists but officer login fails.
+     * Repairs officer login passwords on the {@code employee} table:
+     * copies from legacy {@code officer_registration} if present, then sets default password
+     * ({@code Officer@123}) for employees still missing {@code password_hash}.
+     */
+    @PostMapping("/repair-officer-logins")
+    @Transactional
+    public ResponseEntity<?> repairOfficerLogins(
+            @RequestParam(name = "resetMissingToDefault", defaultValue = "true") boolean resetMissingToDefault
+    ) {
+        try {
+            return ResponseEntity.ok(employeeLoginRepairService.repairOfficerLogins(resetMissingToDefault));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    /**
+     * Resets login password to the default ({@code Officer@123}).
+     * Use when an employee exists but login fails due to a missing or unknown password.
      */
     @PostMapping("/{id}/sync-officer-login")
     @Transactional
     public ResponseEntity<?> syncOfficerLogin(@PathVariable("id") Long id) {
         try {
-            Employee employee = employeeRepository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid employee id"));
-            String officerLoginId = buildOfficerLoginId(employee.getEmail(), employee.getEmployeeCode());
-
-            OfficerRegistration registration = syncOfficerRegistrationForEmployee(employee);
-            registration.setPasswordHash(passwordEncoder.encode(DEFAULT_OFFICER_PASSWORD));
-            officerRegistrationRepository.save(registration);
-
-            return ResponseEntity.ok(Map.of(
-                    "employeeId", employee.getId(),
-                    "userId", officerLoginId,
-                    "defaultPassword", DEFAULT_OFFICER_PASSWORD,
-                    "message", "Officer login synced. Use userId and defaultPassword to sign in."
-            ));
+            return ResponseEntity.ok(employeeLoginRepairService.resetEmployeeLoginPassword(id));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -142,11 +137,17 @@ public class AdminEmployeeController {
         try {
             Employee employee = employeeRepository.findById(id).orElse(null);
             if (employee == null) throw new IllegalArgumentException("Invalid employee id");
+
+            String officerLoginId = EmployeeLoginSupport.buildLoginId(request.getEmail(), request.getEmployeeCode());
+            assertLoginIdAvailable(officerLoginId, employee.getId());
+
             Boolean isActive = request.getIsActive() == null ? employee.getIsActive() : request.getIsActive();
             applyEmployeeFields(employee, request.getEmployeeCode(), request.getFullName(), request.getFullNameLocal(),
                     request.getMobile(), request.getEmail(), isActive);
+            if (!EmployeeLoginSupport.hasText(employee.getPasswordHash())) {
+                employee.setPasswordHash(passwordEncoder.encode(EmployeeLoginSupport.DEFAULT_OFFICER_PASSWORD));
+            }
             employee = employeeRepository.save(employee);
-            syncOfficerRegistrationForEmployee(employee);
             return ResponseEntity.ok(toEmployeeResponse(employee));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -231,20 +232,12 @@ public class AdminEmployeeController {
         }
     }
 
-    private OfficerRegistration syncOfficerRegistrationForEmployee(Employee employee) {
-        String officerLoginId = buildOfficerLoginId(employee.getEmail(), employee.getEmployeeCode());
-        OfficerRegistration registration = officerRegistrationRepository.findByEmail(officerLoginId)
-                .orElseGet(OfficerRegistration::new);
-        registration.setFullName(employee.getFullName());
-        registration.setEmail(officerLoginId);
-        registration.setMobileNumber(trimToFallback(employee.getMobile(), "9999999999"));
-        if (!hasText(registration.getAddress())) {
-            registration.setAddress("Assigned by admin");
-        }
-        if (!hasText(registration.getPasswordHash())) {
-            registration.setPasswordHash(passwordEncoder.encode(DEFAULT_OFFICER_PASSWORD));
-        }
-        return officerRegistrationRepository.save(registration);
+    private void assertLoginIdAvailable(String officerLoginId, Long excludeEmployeeId) {
+        EmployeeLoginSupport.findByLoginId(employeeRepository, officerLoginId)
+                .filter(existing -> excludeEmployeeId == null || !excludeEmployeeId.equals(existing.getId()))
+                .ifPresent(existing -> {
+                    throw new IllegalArgumentException("Employee login ID already exists.");
+                });
     }
 
     private static void applyEmployeeFields(Employee employee,
@@ -276,27 +269,6 @@ public class AdminEmployeeController {
         );
     }
 
-    private static String buildOfficerLoginId(String email, String employeeCode) {
-        if (email != null && !email.trim().isEmpty()) {
-            return email.trim().toLowerCase();
-        }
-        if (employeeCode == null || employeeCode.trim().isEmpty()) {
-            throw new IllegalArgumentException("employeeCode is required");
-        }
-        return employeeCode.trim().toLowerCase() + "@officer.local";
-    }
-
-    private static String trimToFallback(String value, String fallback) {
-        if (value == null || value.trim().isEmpty()) {
-            return fallback;
-        }
-        return value.trim();
-    }
-
-    private static boolean hasText(String value) {
-        return value != null && !value.trim().isEmpty();
-    }
-
     private static EmployeePostingResponse toPostingResponse(EmployeePosting posting) {
         Employee employee = posting.getEmployee();
         Office office = posting.getOffice();
@@ -325,4 +297,3 @@ public class AdminEmployeeController {
         );
     }
 }
-

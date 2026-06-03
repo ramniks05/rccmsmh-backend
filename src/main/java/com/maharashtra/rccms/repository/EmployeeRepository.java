@@ -7,6 +7,9 @@ import java.util.Optional;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     Optional<Employee> findFirstByEmailIgnoreCase(String email);
+
     Optional<Employee> findFirstByEmployeeCodeIgnoreCase(String employeeCode);
+
+    boolean existsByEmailIgnoreCase(String email);
 }
 

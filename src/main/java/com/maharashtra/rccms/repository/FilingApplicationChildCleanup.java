@@ -52,11 +52,11 @@ public class FilingApplicationChildCleanup {
         ).setParameter("appId", applicationId).executeUpdate();
 
         entityManager.createNativeQuery(
-                "DELETE FROM application_attachment WHERE application_id = :appId"
+                "DELETE FROM application_document_checklist WHERE application_id = :appId"
         ).setParameter("appId", applicationId).executeUpdate();
 
         entityManager.createNativeQuery(
-                "DELETE FROM application_document_checklist WHERE application_id = :appId"
+                "DELETE FROM application_attachment WHERE application_id = :appId"
         ).setParameter("appId", applicationId).executeUpdate();
 
         entityManager.createNativeQuery(

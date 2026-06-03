@@ -33,6 +33,9 @@ public class Employee {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    @Column(name = "password_hash", length = 255)
+    private String passwordHash;
+
     public Long getId() {
         return id;
     }
@@ -87,6 +90,14 @@ public class Employee {
 
     public void setIsActive(Boolean active) {
         isActive = active;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
     }
 }
 

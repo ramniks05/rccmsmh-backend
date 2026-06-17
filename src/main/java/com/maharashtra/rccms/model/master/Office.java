@@ -26,14 +26,21 @@ public class Office {
     @JoinColumn(name = "office_type_id", nullable = false)
     private OfficeType officeType;
 
-    /**
-     * One of: STATE, DIVISION, DISTRICT, SUBDISTRICT, TALUKA, VILLAGE
-     */
-    @Column(nullable = false, length = 32)
-    private String level;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "state_id")
+    private State state;
 
-    @Column(name = "location_id", nullable = false)
-    private Long locationId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "division_id")
+    private Division division;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "district_id")
+    private District district;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "taluka_id")
+    private Taluka taluka;
 
     @Column(nullable = false, length = 255)
     private String name;
@@ -49,6 +56,30 @@ public class Office {
 
     @Column(name = "short_name_local", length = 128)
     private String shortNameLocal;
+
+    @Column(name = "office_address", length = 512)
+    private String officeAddress;
+
+    @Column(name = "office_address_local", length = 512)
+    private String officeAddressLocal;
+
+    @Column(length = 190)
+    private String email;
+
+    @Column(name = "office_contact_no", length = 32)
+    private String officeContactNo;
+
+    /** Denormalized state LGD code for import / integration lookups. */
+    @Column(name = "state_lgd_code", length = 64)
+    private String stateLgdCode;
+
+    /** Denormalized district LGD code for import / integration lookups. */
+    @Column(name = "district_lgd_code", length = 64)
+    private String districtLgdCode;
+
+    /** Denormalized taluka LGD code for import / integration lookups. */
+    @Column(name = "taluka_lgd_code", length = 64)
+    private String talukaLgdCode;
 
     public Long getId() {
         return id;
@@ -74,20 +105,36 @@ public class Office {
         this.officeType = officeType;
     }
 
-    public String getLevel() {
-        return level;
+    public State getState() {
+        return state;
     }
 
-    public void setLevel(String level) {
-        this.level = level;
+    public void setState(State state) {
+        this.state = state;
     }
 
-    public Long getLocationId() {
-        return locationId;
+    public Division getDivision() {
+        return division;
     }
 
-    public void setLocationId(Long locationId) {
-        this.locationId = locationId;
+    public void setDivision(Division division) {
+        this.division = division;
+    }
+
+    public District getDistrict() {
+        return district;
+    }
+
+    public void setDistrict(District district) {
+        this.district = district;
+    }
+
+    public Taluka getTaluka() {
+        return taluka;
+    }
+
+    public void setTaluka(Taluka taluka) {
+        this.taluka = taluka;
     }
 
     public String getName() {
@@ -128,6 +175,62 @@ public class Office {
 
     public void setShortNameLocal(String shortNameLocal) {
         this.shortNameLocal = shortNameLocal;
+    }
+
+    public String getOfficeAddress() {
+        return officeAddress;
+    }
+
+    public void setOfficeAddress(String officeAddress) {
+        this.officeAddress = officeAddress;
+    }
+
+    public String getOfficeAddressLocal() {
+        return officeAddressLocal;
+    }
+
+    public void setOfficeAddressLocal(String officeAddressLocal) {
+        this.officeAddressLocal = officeAddressLocal;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getOfficeContactNo() {
+        return officeContactNo;
+    }
+
+    public void setOfficeContactNo(String officeContactNo) {
+        this.officeContactNo = officeContactNo;
+    }
+
+    public String getStateLgdCode() {
+        return stateLgdCode;
+    }
+
+    public void setStateLgdCode(String stateLgdCode) {
+        this.stateLgdCode = stateLgdCode;
+    }
+
+    public String getDistrictLgdCode() {
+        return districtLgdCode;
+    }
+
+    public void setDistrictLgdCode(String districtLgdCode) {
+        this.districtLgdCode = districtLgdCode;
+    }
+
+    public String getTalukaLgdCode() {
+        return talukaLgdCode;
+    }
+
+    public void setTalukaLgdCode(String talukaLgdCode) {
+        this.talukaLgdCode = talukaLgdCode;
     }
 }
 

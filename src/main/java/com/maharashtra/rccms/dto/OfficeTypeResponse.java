@@ -5,6 +5,7 @@ public class OfficeTypeResponse {
     private final Long departmentId;
     private final String departmentName;
     private final String departmentLocalName;
+    private final String boundaryLevel;
     private final String name;
     private final String localName;
     private final String shortName;
@@ -15,6 +16,7 @@ public class OfficeTypeResponse {
             Long departmentId,
             String departmentName,
             String departmentLocalName,
+            String boundaryLevel,
             String name,
             String localName,
             String shortName,
@@ -24,6 +26,7 @@ public class OfficeTypeResponse {
         this.departmentId = departmentId;
         this.departmentName = departmentName;
         this.departmentLocalName = departmentLocalName;
+        this.boundaryLevel = boundaryLevel;
         this.name = name;
         this.localName = localName;
         this.shortName = shortName;
@@ -44,6 +47,10 @@ public class OfficeTypeResponse {
 
     public String getDepartmentLocalName() {
         return departmentLocalName;
+    }
+
+    public String getBoundaryLevel() {
+        return boundaryLevel;
     }
 
     public String getName() {

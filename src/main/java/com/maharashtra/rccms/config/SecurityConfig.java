@@ -53,7 +53,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/api/lookups/states",
                                 "/api/lookups/districts",
-                                "/api/lookups/subdistricts",
                                 "/api/lookups/pincode-details"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/lookups/**").authenticated()

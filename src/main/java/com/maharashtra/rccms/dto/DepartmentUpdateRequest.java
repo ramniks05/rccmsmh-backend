@@ -3,7 +3,6 @@ package com.maharashtra.rccms.dto;
 public class DepartmentUpdateRequest {
     private String name;
     private String localName;
-    private String lgdCode;
     private Long stateId;
 
     public String getName() {
@@ -22,14 +21,6 @@ public class DepartmentUpdateRequest {
         this.localName = localName;
     }
 
-    public String getLgdCode() {
-        return lgdCode;
-    }
-
-    public void setLgdCode(String lgdCode) {
-        this.lgdCode = lgdCode;
-    }
-
     public Long getStateId() {
         return stateId;
     }
@@ -38,4 +29,3 @@ public class DepartmentUpdateRequest {
         this.stateId = stateId;
     }
 }
-

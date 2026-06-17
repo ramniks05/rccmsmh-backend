@@ -1,5 +1,6 @@
 package com.maharashtra.rccms.model.master;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
@@ -7,7 +8,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 /**
- * Taluka (tehsil / sub-district) under a district.
+ * Taluka (tehsil) under a district.
  */
 @Entity
 @Table(name = "master_taluka")
@@ -17,13 +18,9 @@ public class Taluka extends BoundaryNamedLgdBase {
     @JoinColumn(name = "district_id", nullable = false)
     private District district;
 
-    /**
-     * Optional at DB level for backward compatibility with existing rows.
-     * API enforces providing subdistrictId for new taluka creation.
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "subdistrict_id")
-    private Subdistrict subdistrict;
+    /** Denormalized parent district LGD code for import / integration lookups. */
+    @Column(name = "district_lgd_code", length = 64)
+    private String districtLgdCode;
 
     public District getDistrict() {
         return district;
@@ -33,11 +30,11 @@ public class Taluka extends BoundaryNamedLgdBase {
         this.district = district;
     }
 
-    public Subdistrict getSubdistrict() {
-        return subdistrict;
+    public String getDistrictLgdCode() {
+        return districtLgdCode;
     }
 
-    public void setSubdistrict(Subdistrict subdistrict) {
-        this.subdistrict = subdistrict;
+    public void setDistrictLgdCode(String districtLgdCode) {
+        this.districtLgdCode = districtLgdCode;
     }
 }

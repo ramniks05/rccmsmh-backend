@@ -79,21 +79,20 @@ public class MastersLookupController {
     }
 
     /**
-     * Offices for a given tehsil (taluka) for dropdowns.
-     * Uses master Office rows where level = "TALUKA" and locationId = talukaId.
+     * Offices whose office type boundary level is TALUKA (tehsil offices).
      */
     @GetMapping("/offices/by-taluka")
     public ResponseEntity<?> listOfficesByTaluka(
-            @RequestParam("talukaId") Long talukaId,
             @RequestParam(name = "departmentId", required = false) Long departmentId
     ) {
-        String level = "TALUKA";
+        String boundaryLevel = "TALUKA";
         List<Office> offices = (departmentId == null)
-                ? officeRepository.findByLevelAndLocationIdOrderByNameAsc(level, talukaId)
-                : officeRepository.findByDepartmentIdAndLevelAndLocationIdOrderByNameAsc(departmentId, level, talukaId);
+                ? officeRepository.findByOfficeType_BoundaryLevelOrderByNameAsc(boundaryLevel)
+                : officeRepository.findByDepartmentIdAndOfficeType_BoundaryLevelOrderByNameAsc(
+                        departmentId, boundaryLevel);
 
         List<OfficeResponse> items = offices.stream()
-                .map(this::toOfficeResponse)
+                .map(OfficeResponse::from)
                 .toList();
         return ResponseEntity.ok(items);
     }
@@ -114,25 +113,6 @@ public class MastersLookupController {
 
     private static String safe(String value) {
         return value == null ? "" : value;
-    }
-
-    private OfficeResponse toOfficeResponse(Office office) {
-        return new OfficeResponse(
-                office.getId(),
-                office.getDepartment() == null ? null : office.getDepartment().getId(),
-                office.getDepartment() == null ? null : office.getDepartment().getName(),
-                office.getDepartment() == null ? null : office.getDepartment().getLocalName(),
-                office.getOfficeType() == null ? null : office.getOfficeType().getId(),
-                office.getOfficeType() == null ? null : office.getOfficeType().getName(),
-                office.getOfficeType() == null ? null : office.getOfficeType().getLocalName(),
-                office.getLevel(),
-                office.getLocationId(),
-                office.getName(),
-                office.getOfficeCode(),
-                office.getLocalName(),
-                office.getShortName(),
-                office.getShortNameLocal()
-        );
     }
 
 }

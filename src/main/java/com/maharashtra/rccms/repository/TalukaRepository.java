@@ -7,6 +7,4 @@ import java.util.List;
 
 public interface TalukaRepository extends JpaRepository<Taluka, Long> {
     List<Taluka> findByDistrictIdOrderByNameAsc(Long districtId);
-    List<Taluka> findByDistrictIdAndSubdistrictIdOrderByNameAsc(Long districtId, Long subdistrictId);
 }
-

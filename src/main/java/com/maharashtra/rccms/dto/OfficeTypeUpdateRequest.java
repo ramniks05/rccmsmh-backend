@@ -2,6 +2,8 @@ package com.maharashtra.rccms.dto;
 
 public class OfficeTypeUpdateRequest {
     private Long departmentId;
+    /** STATE | DIVISION | DISTRICT | TALUKA | VILLAGE */
+    private String boundaryLevel;
     private String name;
     private String localName;
     private String shortName;
@@ -13,6 +15,14 @@ public class OfficeTypeUpdateRequest {
 
     public void setDepartmentId(Long departmentId) {
         this.departmentId = departmentId;
+    }
+
+    public String getBoundaryLevel() {
+        return boundaryLevel;
+    }
+
+    public void setBoundaryLevel(String boundaryLevel) {
+        this.boundaryLevel = boundaryLevel;
     }
 
     public String getName() {

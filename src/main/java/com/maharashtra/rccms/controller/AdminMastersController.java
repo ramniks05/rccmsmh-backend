@@ -7,6 +7,7 @@ import com.maharashtra.rccms.dto.CaseCategoryCreateRequest;
 import com.maharashtra.rccms.dto.CaseCategoryResponse;
 import com.maharashtra.rccms.dto.CaseCategoryUpdateRequest;
 import com.maharashtra.rccms.dto.BoundaryMasterCreateRequest;
+import com.maharashtra.rccms.dto.BoundaryNamedCreateRequest;
 import com.maharashtra.rccms.dto.BoundaryMasterResponse;
 import com.maharashtra.rccms.dto.DepartmentCreateRequest;
 import com.maharashtra.rccms.dto.DepartmentResponse;
@@ -19,8 +20,8 @@ import com.maharashtra.rccms.dto.DesignationResponse;
 import com.maharashtra.rccms.dto.DesignationUpdateRequest;
 import com.maharashtra.rccms.dto.DistrictCreateRequest;
 import com.maharashtra.rccms.dto.DivisionCreateRequest;
-import com.maharashtra.rccms.dto.SubdistrictCreateRequest;
 import com.maharashtra.rccms.dto.TalukaCreateRequest;
+import com.maharashtra.rccms.dto.StateCreateRequest;
 import com.maharashtra.rccms.dto.SectionCreateRequest;
 import com.maharashtra.rccms.dto.SectionResponse;
 import com.maharashtra.rccms.dto.SectionUpdateRequest;
@@ -45,12 +46,14 @@ import com.maharashtra.rccms.model.master.DocumentType;
 import com.maharashtra.rccms.model.master.Section;
 import com.maharashtra.rccms.model.master.Subject;
 import com.maharashtra.rccms.model.master.Office;
+import com.maharashtra.rccms.model.master.BoundaryLevel;
 import com.maharashtra.rccms.model.master.OfficeType;
 import com.maharashtra.rccms.model.master.Occupation;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.Division;
+import com.maharashtra.rccms.model.master.BoundaryNamedBase;
+import com.maharashtra.rccms.model.master.BoundaryNamedLgdBase;
 import com.maharashtra.rccms.model.master.State;
-import com.maharashtra.rccms.model.master.Subdistrict;
 import com.maharashtra.rccms.model.master.Taluka;
 import com.maharashtra.rccms.model.master.Village;
 import com.maharashtra.rccms.repository.ActRepository;
@@ -66,7 +69,6 @@ import com.maharashtra.rccms.repository.OfficeTypeRepository;
 import com.maharashtra.rccms.repository.OccupationRepository;
 import com.maharashtra.rccms.repository.SectionRepository;
 import com.maharashtra.rccms.repository.StateRepository;
-import com.maharashtra.rccms.repository.SubdistrictRepository;
 import com.maharashtra.rccms.repository.SubjectRepository;
 import com.maharashtra.rccms.repository.TalukaRepository;
 import com.maharashtra.rccms.repository.VillageRepository;
@@ -107,7 +109,6 @@ public class AdminMastersController {
     private final StateRepository stateRepository;
     private final DivisionRepository divisionRepository;
     private final DistrictRepository districtRepository;
-    private final SubdistrictRepository subdistrictRepository;
     private final TalukaRepository talukaRepository;
     private final VillageRepository villageRepository;
 
@@ -126,7 +127,6 @@ public class AdminMastersController {
             StateRepository stateRepository,
             DivisionRepository divisionRepository,
             DistrictRepository districtRepository,
-            SubdistrictRepository subdistrictRepository,
             TalukaRepository talukaRepository,
             VillageRepository villageRepository
     ) {
@@ -144,7 +144,6 @@ public class AdminMastersController {
         this.stateRepository = stateRepository;
         this.divisionRepository = divisionRepository;
         this.districtRepository = districtRepository;
-        this.subdistrictRepository = subdistrictRepository;
         this.talukaRepository = talukaRepository;
         this.villageRepository = villageRepository;
     }
@@ -158,7 +157,14 @@ public class AdminMastersController {
                     .orElseThrow(() -> new IllegalArgumentException("Invalid departmentId"));
 
             OfficeType officeType = new OfficeType();
-            applyOfficeTypeFields(officeType, request.getName(), request.getLocalName(), request.getShortName(), request.getShortNameLocal());
+            applyOfficeTypeFields(
+                    officeType,
+                    request.getBoundaryLevel(),
+                    request.getName(),
+                    request.getLocalName(),
+                    request.getShortName(),
+                    request.getShortNameLocal()
+            );
             officeType.setDepartment(department);
             officeType = officeTypeRepository.save(officeType);
             return ResponseEntity.status(HttpStatus.CREATED).body(toOfficeTypeResponse(officeType));
@@ -453,15 +459,21 @@ public class AdminMastersController {
         try {
             Department department = requireDepartment(request.getDepartmentId());
             OfficeType officeType = requireOfficeType(request.getOfficeTypeId());
-            validateLocation(request.getLevel(), request.getLocationId());
+            assertOfficeTypeBelongsToDepartment(officeType, department);
+            requireOfficeTypeBoundaryLevel(officeType);
 
             Office office = new Office();
             office.setDepartment(department);
             office.setOfficeType(officeType);
-            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getOfficeCode(), request.getLocalName(),
-                    request.getShortName(), request.getShortNameLocal());
+            applyOfficeFields(office, request.getName(), request.getOfficeCode(), request.getLocalName(),
+                    request.getShortName(), request.getShortNameLocal(),
+                    request.getOfficeAddress(), request.getOfficeAddressLocal(),
+                    request.getEmail(), request.getOfficeContactNo());
+            applyOfficeBoundaryRefs(office, request.getStateId(), request.getDivisionId(), request.getDistrictId(),
+                    request.getTalukaId(), request.getStateLgdCode(), request.getDistrictLgdCode(),
+                    request.getTalukaLgdCode());
             office = officeRepository.save(office);
-            return ResponseEntity.status(HttpStatus.CREATED).body(toOfficeResponse(office));
+            return ResponseEntity.status(HttpStatus.CREATED).body(OfficeResponse.from(office));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -471,15 +483,15 @@ public class AdminMastersController {
     public ResponseEntity<?> listOffices(
             @RequestParam(name = "departmentId", required = false) Long departmentId,
             @RequestParam(name = "officeTypeId", required = false) Long officeTypeId,
-            @RequestParam(name = "level", required = false) String level,
-            @RequestParam(name = "locationId", required = false) Long locationId
+            @RequestParam(name = "boundaryLevel", required = false) String boundaryLevel
     ) {
         List<OfficeResponse> items = officeRepository.findAll().stream()
                 .filter(o -> departmentId == null || (o.getDepartment() != null && departmentId.equals(o.getDepartment().getId())))
                 .filter(o -> officeTypeId == null || (o.getOfficeType() != null && officeTypeId.equals(o.getOfficeType().getId())))
-                .filter(o -> level == null || (o.getLevel() != null && level.equalsIgnoreCase(o.getLevel())))
-                .filter(o -> locationId == null || (o.getLocationId() != null && locationId.equals(o.getLocationId())))
-                .map(this::toOfficeResponse)
+                .filter(o -> boundaryLevel == null || (o.getOfficeType() != null
+                        && o.getOfficeType().getBoundaryLevel() != null
+                        && boundaryLevel.equalsIgnoreCase(o.getOfficeType().getBoundaryLevel())))
+                .map(OfficeResponse::from)
                 .toList();
         return ResponseEntity.ok(items);
     }
@@ -492,14 +504,20 @@ public class AdminMastersController {
 
             Department department = requireDepartment(request.getDepartmentId());
             OfficeType officeType = requireOfficeType(request.getOfficeTypeId());
-            validateLocation(request.getLevel(), request.getLocationId());
+            assertOfficeTypeBelongsToDepartment(officeType, department);
+            requireOfficeTypeBoundaryLevel(officeType);
 
             office.setDepartment(department);
             office.setOfficeType(officeType);
-            applyOfficeFields(office, request.getLevel(), request.getLocationId(), request.getName(), request.getOfficeCode(), request.getLocalName(),
-                    request.getShortName(), request.getShortNameLocal());
+            applyOfficeFields(office, request.getName(), request.getOfficeCode(), request.getLocalName(),
+                    request.getShortName(), request.getShortNameLocal(),
+                    request.getOfficeAddress(), request.getOfficeAddressLocal(),
+                    request.getEmail(), request.getOfficeContactNo());
+            applyOfficeBoundaryRefs(office, request.getStateId(), request.getDivisionId(), request.getDistrictId(),
+                    request.getTalukaId(), request.getStateLgdCode(), request.getDistrictLgdCode(),
+                    request.getTalukaLgdCode());
             office = officeRepository.save(office);
-            return ResponseEntity.ok(toOfficeResponse(office));
+            return ResponseEntity.ok(OfficeResponse.from(office));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -541,7 +559,14 @@ public class AdminMastersController {
             Department department = departmentRepository.findById(departmentId)
                     .orElseThrow(() -> new IllegalArgumentException("Invalid departmentId"));
 
-            applyOfficeTypeFields(officeType, request.getName(), request.getLocalName(), request.getShortName(), request.getShortNameLocal());
+            applyOfficeTypeFields(
+                    officeType,
+                    request.getBoundaryLevel(),
+                    request.getName(),
+                    request.getLocalName(),
+                    request.getShortName(),
+                    request.getShortNameLocal()
+            );
             officeType.setDepartment(department);
             officeType = officeTypeRepository.save(officeType);
             return ResponseEntity.ok(toOfficeTypeResponse(officeType));
@@ -743,7 +768,7 @@ public class AdminMastersController {
                     .orElseThrow(() -> new IllegalArgumentException("Invalid stateId"));
 
             Department department = new Department();
-            applyDepartmentFields(department, request.getName(), request.getLocalName(), request.getLgdCode());
+            applyDepartmentFields(department, request.getName(), request.getLocalName());
             department.setState(state);
             department = departmentRepository.save(department);
             return ResponseEntity.status(HttpStatus.CREATED).body(toDepartmentResponse(department));
@@ -772,7 +797,7 @@ public class AdminMastersController {
             State state = stateRepository.findById(stateId)
                     .orElseThrow(() -> new IllegalArgumentException("Invalid stateId"));
 
-            applyDepartmentFields(department, request.getName(), request.getLocalName(), request.getLgdCode());
+            applyDepartmentFields(department, request.getName(), request.getLocalName());
             department.setState(state);
             department = departmentRepository.save(department);
             return ResponseEntity.ok(toDepartmentResponse(department));
@@ -797,10 +822,11 @@ public class AdminMastersController {
     }
 
     @PostMapping("/states")
-    public ResponseEntity<?> createState(@RequestBody BoundaryMasterCreateRequest request) {
+    public ResponseEntity<?> createState(@RequestBody StateCreateRequest request) {
         try {
             State state = new State();
             applyBoundaryFields(state, request);
+            state.setStateOrUT(request.getStateOrUT());
             state = stateRepository.save(state);
             return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(state, null, null, null, null, null));
         } catch (IllegalArgumentException ex) {
@@ -824,11 +850,13 @@ public class AdminMastersController {
             State state = stateRepository.findById(stateId)
                     .orElseThrow(() -> new IllegalArgumentException("Invalid stateId"));
 
-            Division division = new Division();
-            applyBoundaryFields(division, request);
-            division.setState(state);
-            division = divisionRepository.save(division);
-            return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(division, state.getId(), null, null, null, null));
+            Division newDivision = new Division();
+            applyNamedBoundaryFields(newDivision, request);
+            newDivision.setDivisionCode(trimToNull(request.getDivisionCode()));
+            newDivision.setState(state);
+            newDivision = divisionRepository.save(newDivision);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(toResponse(newDivision, state.getId(), null, null, null, null));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -890,43 +918,6 @@ public class AdminMastersController {
         return ResponseEntity.ok(items);
     }
 
-    @PostMapping("/subdistricts")
-    public ResponseEntity<?> createSubdistrict(@RequestBody SubdistrictCreateRequest request) {
-        try {
-            Long districtId = request.getDistrictId();
-            if (districtId == null) throw new IllegalArgumentException("districtId is required");
-            District district = districtRepository.findById(districtId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid districtId"));
-
-            Subdistrict subdistrict = new Subdistrict();
-            applyBoundaryFields(subdistrict, request);
-            subdistrict.setDistrict(district);
-            subdistrict = subdistrictRepository.save(subdistrict);
-
-            Long stateId = district.getState() == null ? null : district.getState().getId();
-            Long divisionId = district.getDivision() == null ? null : district.getDivision().getId();
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(toResponse(subdistrict, stateId, divisionId, district.getId(), null, null));
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
-    }
-
-    @GetMapping("/subdistricts")
-    public ResponseEntity<?> listSubdistricts(@RequestParam(name = "districtId", required = false) Long districtId) {
-        List<BoundaryMasterResponse> items = subdistrictRepository.findAll().stream()
-                .filter(s -> districtId == null || (s.getDistrict() != null && districtId.equals(s.getDistrict().getId())))
-                .map(s -> {
-                    District d = s.getDistrict();
-                    Long stateId = (d == null || d.getState() == null) ? null : d.getState().getId();
-                    Long divisionId = (d == null || d.getDivision() == null) ? null : d.getDivision().getId();
-                    Long dId = d == null ? null : d.getId();
-                    return toResponse(s, stateId, divisionId, dId, null, null);
-                })
-                .toList();
-        return ResponseEntity.ok(items);
-    }
-
     @PostMapping("/talukas")
     public ResponseEntity<?> createTaluka(@RequestBody TalukaCreateRequest request) {
         try {
@@ -935,25 +926,15 @@ public class AdminMastersController {
             District district = districtRepository.findById(districtId)
                     .orElseThrow(() -> new IllegalArgumentException("Invalid districtId"));
 
-            Long subdistrictId = request.getSubdistrictId();
-            if (subdistrictId == null) throw new IllegalArgumentException("subdistrictId is required");
-            Subdistrict subdistrict = subdistrictRepository.findById(subdistrictId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid subdistrictId"));
-            if (subdistrict.getDistrict() == null || subdistrict.getDistrict().getId() == null
-                    || !subdistrict.getDistrict().getId().equals(districtId)) {
-                throw new IllegalArgumentException("subdistrictId does not belong to districtId");
-            }
-
             Taluka taluka = new Taluka();
             applyBoundaryFields(taluka, request);
-            taluka.setDistrict(district);
-            taluka.setSubdistrict(subdistrict);
+            applyTalukaDistrictRef(taluka, district, request.getDistrictLgdCode());
             taluka = talukaRepository.save(taluka);
 
             Long stateId = district.getState() == null ? null : district.getState().getId();
             Long divisionId = district.getDivision() == null ? null : district.getDivision().getId();
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(toResponse(taluka, stateId, divisionId, district.getId(), subdistrict.getId(), null));
+                    .body(toResponse(taluka, stateId, divisionId, district.getId(), null, null));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -968,8 +949,7 @@ public class AdminMastersController {
                     Long stateId = (d == null || d.getState() == null) ? null : d.getState().getId();
                     Long divisionId = (d == null || d.getDivision() == null) ? null : d.getDivision().getId();
                     Long dId = d == null ? null : d.getId();
-                    Long sdId = (t.getSubdistrict() == null) ? null : t.getSubdistrict().getId();
-                    return toResponse(t, stateId, divisionId, dId, sdId, null);
+                    return toResponse(t, stateId, divisionId, dId, null, t.getId());
                 })
                 .toList();
         return ResponseEntity.ok(items);
@@ -985,17 +965,15 @@ public class AdminMastersController {
 
             Village village = new Village();
             applyBoundaryFields(village, request);
-            village.setTaluka(taluka);
+            applyVillageTalukaRef(village, taluka, request.getTalukaLgdCode());
             village = villageRepository.save(village);
 
             District district = taluka.getDistrict();
             Long districtId = district == null ? null : district.getId();
             Long stateId = (district == null || district.getState() == null) ? null : district.getState().getId();
             Long divisionId = (district == null || district.getDivision() == null) ? null : district.getDivision().getId();
-            Long subdistrictId = taluka.getSubdistrict() == null ? null : taluka.getSubdistrict().getId();
-
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(toResponse(village, stateId, divisionId, districtId, subdistrictId, taluka.getId()));
+                    .body(toResponse(village, stateId, divisionId, districtId, null, taluka.getId()));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -1011,52 +989,104 @@ public class AdminMastersController {
                     Long districtId = d == null ? null : d.getId();
                     Long stateId = (d == null || d.getState() == null) ? null : d.getState().getId();
                     Long divisionId = (d == null || d.getDivision() == null) ? null : d.getDivision().getId();
-                    Long subdistrictId = (t == null || t.getSubdistrict() == null) ? null : t.getSubdistrict().getId();
                     Long tId = t == null ? null : t.getId();
-                    return toResponse(v, stateId, divisionId, districtId, subdistrictId, tId);
+                    return toResponse(v, stateId, divisionId, districtId, null, tId);
                 })
                 .toList();
         return ResponseEntity.ok(items);
     }
 
-    private static void applyBoundaryFields(com.maharashtra.rccms.model.master.BoundaryNamedLgdBase entity,
-                                           BoundaryMasterCreateRequest request) {
+    private static void applyNamedBoundaryFields(BoundaryNamedBase entity, BoundaryNamedCreateRequest request) {
         if (request.getName() == null || request.getName().trim().isEmpty()) {
             throw new IllegalArgumentException("name is required");
         }
         entity.setName(request.getName().trim());
         entity.setLocalName(request.getLocalName());
+    }
+
+    private static void applyBoundaryFields(BoundaryNamedLgdBase entity, BoundaryMasterCreateRequest request) {
+        applyNamedBoundaryFields(entity, request);
         entity.setLgdCode(request.getLgdCode());
     }
 
     private static BoundaryMasterResponse toResponse(
-            com.maharashtra.rccms.model.master.BoundaryNamedLgdBase entity,
+            BoundaryNamedBase entity,
             Long stateId,
             Long divisionId,
             Long districtId,
             Long subdistrictId,
             Long talukaId
     ) {
+        String lgdCode = null;
+        if (entity instanceof BoundaryNamedLgdBase) {
+            lgdCode = ((BoundaryNamedLgdBase) entity).getLgdCode();
+        }
+        String stateOrUT = null;
+        if (entity instanceof State) {
+            stateOrUT = ((State) entity).getStateOrUT();
+        }
+        String divisionCode = null;
+        if (entity instanceof Division division) {
+            divisionCode = division.getDivisionCode();
+        }
+        String districtLgdCode = null;
+        String subdistrictLgdCode = null;
+        if (entity instanceof Taluka taluka) {
+            districtLgdCode = taluka.getDistrictLgdCode();
+        }
+        String talukaLgdCode = null;
+        if (entity instanceof Village village) {
+            talukaLgdCode = village.getTalukaLgdCode();
+        }
         return new BoundaryMasterResponse(
                 entity.getId(),
                 entity.getName(),
                 entity.getLocalName(),
-                entity.getLgdCode(),
+                lgdCode,
+                stateOrUT,
+                divisionCode,
                 stateId,
                 divisionId,
                 districtId,
+                districtLgdCode,
                 subdistrictId,
-                talukaId
+                subdistrictLgdCode,
+                talukaId,
+                talukaLgdCode
         );
     }
 
-    private static void applyDepartmentFields(Department department, String name, String localName, String lgdCode) {
+    private static void applyVillageTalukaRef(Village village, Taluka taluka, String rawTalukaLgdCode) {
+        village.setTaluka(taluka);
+        village.setTalukaLgdCode(
+                resolveParentLgdCode(rawTalukaLgdCode, taluka.getLgdCode(), "talukaLgdCode")
+        );
+    }
+
+    private static void applyTalukaDistrictRef(Taluka taluka, District district, String rawDistrictLgdCode) {
+        taluka.setDistrict(district);
+        taluka.setDistrictLgdCode(
+                resolveParentLgdCode(rawDistrictLgdCode, district.getLgdCode(), "districtLgdCode")
+        );
+    }
+
+    private static String resolveParentLgdCode(String rawProvided, String fromMaster, String fieldLabel) {
+        String provided = rawProvided == null ? null : rawProvided.trim();
+        if (provided != null && provided.isEmpty()) {
+            provided = null;
+        }
+        if (provided != null && fromMaster != null && !provided.equals(fromMaster)) {
+            throw new IllegalArgumentException(fieldLabel + " does not match selected parent");
+        }
+        return provided != null ? provided : fromMaster;
+    }
+
+    private static void applyDepartmentFields(Department department, String name, String localName) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("name is required");
         }
         department.setName(name.trim());
         department.setLocalName(localName);
-        department.setLgdCode(lgdCode);
     }
 
     private static DepartmentResponse toDepartmentResponse(Department department) {
@@ -1064,7 +1094,6 @@ public class AdminMastersController {
                 department.getId(),
                 department.getName(),
                 department.getLocalName(),
-                department.getLgdCode(),
                 department.getState() == null ? null : department.getState().getId()
         );
     }
@@ -1188,52 +1217,61 @@ public class AdminMastersController {
     }
 
     private static void applyOfficeFields(Office office,
-                                          String level,
-                                          Long locationId,
                                           String name,
                                           String officeCode,
                                           String localName,
                                           String shortName,
-                                          String shortNameLocal) {
-        if (level == null || level.trim().isEmpty()) throw new IllegalArgumentException("level is required");
-        if (locationId == null) throw new IllegalArgumentException("locationId is required");
+                                          String shortNameLocal,
+                                          String officeAddress,
+                                          String officeAddressLocal,
+                                          String email,
+                                          String officeContactNo) {
         if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("name is required");
-        office.setLevel(level.trim().toUpperCase());
-        office.setLocationId(locationId);
         office.setName(name.trim());
         office.setOfficeCode(trimToNull(officeCode));
         office.setLocalName(localName);
         office.setShortName(shortName);
         office.setShortNameLocal(shortNameLocal);
+        office.setOfficeAddress(trimToNull(officeAddress));
+        office.setOfficeAddressLocal(trimToNull(officeAddressLocal));
+        office.setEmail(trimToNull(email));
+        office.setOfficeContactNo(trimToNull(officeContactNo));
     }
 
-    private OfficeResponse toOfficeResponse(Office office) {
-        Department department = office.getDepartment();
-        Long departmentId = department == null ? null : department.getId();
-        String departmentName = department == null ? null : department.getName();
-        String departmentLocalName = department == null ? null : department.getLocalName();
-
-        OfficeType officeType = office.getOfficeType();
-        Long officeTypeId = officeType == null ? null : officeType.getId();
-        String officeTypeName = officeType == null ? null : officeType.getName();
-        String officeTypeLocalName = officeType == null ? null : officeType.getLocalName();
-
-        return new OfficeResponse(
-                office.getId(),
-                departmentId,
-                departmentName,
-                departmentLocalName,
-                officeTypeId,
-                officeTypeName,
-                officeTypeLocalName,
-                office.getLevel(),
-                office.getLocationId(),
-                office.getName(),
-                office.getOfficeCode(),
-                office.getLocalName(),
-                office.getShortName(),
-                office.getShortNameLocal()
+    private void applyOfficeBoundaryRefs(Office office,
+                                         Long stateId,
+                                         Long divisionId,
+                                         Long districtId,
+                                         Long talukaId,
+                                         String stateLgdCode,
+                                         String districtLgdCode,
+                                         String talukaLgdCode) {
+        State state = resolveOptionalBoundary(stateId, stateRepository, "stateId");
+        District district = resolveOptionalBoundary(districtId, districtRepository, "districtId");
+        Taluka taluka = resolveOptionalBoundary(talukaId, talukaRepository, "talukaId");
+        office.setState(state);
+        office.setDivision(resolveOptionalBoundary(divisionId, divisionRepository, "divisionId"));
+        office.setDistrict(district);
+        office.setTaluka(taluka);
+        office.setStateLgdCode(
+                resolveParentLgdCode(stateLgdCode, state == null ? null : state.getLgdCode(), "stateLgdCode")
         );
+        office.setDistrictLgdCode(
+                resolveParentLgdCode(districtLgdCode, district == null ? null : district.getLgdCode(), "districtLgdCode")
+        );
+        office.setTalukaLgdCode(
+                resolveParentLgdCode(talukaLgdCode, taluka == null ? null : taluka.getLgdCode(), "talukaLgdCode")
+        );
+    }
+
+    private static <T> T resolveOptionalBoundary(Long id,
+                                                 org.springframework.data.repository.CrudRepository<T, Long> repository,
+                                                 String fieldName) {
+        if (id == null) {
+            return null;
+        }
+        return repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid " + fieldName));
     }
 
     private static String trimToNull(String value) {
@@ -1364,30 +1402,29 @@ public class AdminMastersController {
                 .orElseThrow(() -> new IllegalArgumentException("Invalid officeTypeId"));
     }
 
-    private void validateLocation(String levelRaw, Long locationId) {
-        if (levelRaw == null || levelRaw.trim().isEmpty()) throw new IllegalArgumentException("level is required");
-        if (locationId == null) throw new IllegalArgumentException("locationId is required");
-        String level = levelRaw.trim().toUpperCase();
+    private static void assertOfficeTypeBelongsToDepartment(OfficeType officeType, Department department) {
+        if (officeType.getDepartment() == null
+                || department.getId() == null
+                || !department.getId().equals(officeType.getDepartment().getId())) {
+            throw new IllegalArgumentException("officeTypeId does not belong to departmentId");
+        }
+    }
 
-        boolean exists = switch (level) {
-            case "STATE" -> stateRepository.existsById(locationId);
-            case "DIVISION" -> divisionRepository.existsById(locationId);
-            case "DISTRICT" -> districtRepository.existsById(locationId);
-            case "SUBDISTRICT" -> subdistrictRepository.existsById(locationId);
-            case "TALUKA" -> talukaRepository.existsById(locationId);
-            case "VILLAGE" -> villageRepository.existsById(locationId);
-            default -> throw new IllegalArgumentException("Invalid level");
-        };
-
-        if (!exists) throw new IllegalArgumentException("Invalid locationId for level " + level);
+    private static String requireOfficeTypeBoundaryLevel(OfficeType officeType) {
+        if (officeType.getBoundaryLevel() == null || officeType.getBoundaryLevel().isBlank()) {
+            throw new IllegalArgumentException("Selected office type has no boundaryLevel configured");
+        }
+        return BoundaryLevel.normalize(officeType.getBoundaryLevel());
     }
 
     private static void applyOfficeTypeFields(OfficeType officeType,
+                                              String boundaryLevel,
                                               String name,
                                               String localName,
                                               String shortName,
                                               String shortNameLocal) {
         if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("name is required");
+        officeType.setBoundaryLevel(BoundaryLevel.normalize(boundaryLevel));
         officeType.setName(name.trim());
         officeType.setLocalName(localName);
         officeType.setShortName(shortName);
@@ -1404,6 +1441,7 @@ public class AdminMastersController {
                 departmentId,
                 departmentName,
                 departmentLocalName,
+                officeType.getBoundaryLevel(),
                 officeType.getName(),
                 officeType.getLocalName(),
                 officeType.getShortName(),

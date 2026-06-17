@@ -1,7 +1,8 @@
 package com.maharashtra.rccms.dto;
 
-public class DivisionCreateRequest extends BoundaryMasterCreateRequest {
+public class DivisionCreateRequest extends BoundaryNamedCreateRequest {
     private Long stateId;
+    private String divisionCode;
 
     public Long getStateId() {
         return stateId;
@@ -9,6 +10,14 @@ public class DivisionCreateRequest extends BoundaryMasterCreateRequest {
 
     public void setStateId(Long stateId) {
         this.stateId = stateId;
+    }
+
+    public String getDivisionCode() {
+        return divisionCode;
+    }
+
+    public void setDivisionCode(String divisionCode) {
+        this.divisionCode = divisionCode;
     }
 }
 

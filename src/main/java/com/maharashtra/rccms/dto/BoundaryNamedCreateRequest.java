@@ -1,9 +1,11 @@
 package com.maharashtra.rccms.dto;
 
-public class DepartmentCreateRequest {
+/**
+ * Create payload for boundary masters without LGD code (e.g. division).
+ */
+public class BoundaryNamedCreateRequest {
     private String name;
     private String localName;
-    private Long stateId;
 
     public String getName() {
         return name;
@@ -19,13 +21,5 @@ public class DepartmentCreateRequest {
 
     public void setLocalName(String localName) {
         this.localName = localName;
-    }
-
-    public Long getStateId() {
-        return stateId;
-    }
-
-    public void setStateId(Long stateId) {
-        this.stateId = stateId;
     }
 }

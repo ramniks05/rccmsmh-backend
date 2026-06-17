@@ -22,6 +22,13 @@ public class OfficeType {
     @JoinColumn(name = "department_id", nullable = false)
     private Department department;
 
+    /**
+     * Boundary level at which offices of this type are located
+     * (STATE, DIVISION, DISTRICT, TALUKA, VILLAGE).
+     */
+    @Column(name = "boundary_level", nullable = false, length = 32)
+    private String boundaryLevel;
+
     @Column(nullable = false, length = 255)
     private String name;
 
@@ -48,6 +55,14 @@ public class OfficeType {
 
     public void setDepartment(Department department) {
         this.department = department;
+    }
+
+    public String getBoundaryLevel() {
+        return boundaryLevel;
+    }
+
+    public void setBoundaryLevel(String boundaryLevel) {
+        this.boundaryLevel = boundaryLevel;
     }
 
     public String getName() {

@@ -2,7 +2,8 @@ package com.maharashtra.rccms.dto;
 
 public class TalukaCreateRequest extends BoundaryMasterCreateRequest {
     private Long districtId;
-    private Long subdistrictId;
+    /** Parent district LGD code; if omitted, copied from the district master row. */
+    private String districtLgdCode;
 
     public Long getDistrictId() {
         return districtId;
@@ -12,12 +13,11 @@ public class TalukaCreateRequest extends BoundaryMasterCreateRequest {
         this.districtId = districtId;
     }
 
-    public Long getSubdistrictId() {
-        return subdistrictId;
+    public String getDistrictLgdCode() {
+        return districtLgdCode;
     }
 
-    public void setSubdistrictId(Long subdistrictId) {
-        this.subdistrictId = subdistrictId;
+    public void setDistrictLgdCode(String districtLgdCode) {
+        this.districtLgdCode = districtLgdCode;
     }
 }
-

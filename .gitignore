@@ -4,3 +4,5 @@
 *.log
 /uploads/
 *.metadata
+*.class
+tmp-reg.json

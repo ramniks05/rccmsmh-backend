@@ -14,14 +14,21 @@ public class LgdMasterLookupService {
 
     private final StateRepository stateRepository;
     private final DistrictRepository districtRepository;
+    private final CoveredStateService coveredStateService;
 
-    public LgdMasterLookupService(StateRepository stateRepository, DistrictRepository districtRepository) {
+    public LgdMasterLookupService(
+            StateRepository stateRepository,
+            DistrictRepository districtRepository,
+            CoveredStateService coveredStateService
+    ) {
         this.stateRepository = stateRepository;
         this.districtRepository = districtRepository;
+        this.coveredStateService = coveredStateService;
     }
 
     public State requireStateByLgdCode(String rawLgdCode, String fieldLabel) {
-        String code = normalizeLgdCode(rawLgdCode, fieldLabel);
+        coveredStateService.requireCoveredLgdCode(rawLgdCode, fieldLabel);
+        String code = AdvocateRegistrationSupport.trimToNull(rawLgdCode);
         return stateRepository.findFirstByLgdCode(code)
                 .orElseThrow(() -> new IllegalArgumentException(
                         fieldLabel + ": invalid or missing LGD code. Select a value from GET /api/lookups/states."

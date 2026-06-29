@@ -7,5 +7,7 @@ import java.util.Optional;
 
 public interface StateRepository extends JpaRepository<State, Long> {
     Optional<State> findFirstByLgdCode(String lgdCode);
+
+    Optional<State> findFirstByNameIgnoreCase(String name);
 }
 

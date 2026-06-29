@@ -7,7 +7,6 @@ import com.maharashtra.rccms.model.master.CaseCategory;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.Office;
 import com.maharashtra.rccms.model.master.Section;
-import com.maharashtra.rccms.model.master.Subdistrict;
 import com.maharashtra.rccms.model.master.Subject;
 import com.maharashtra.rccms.model.master.Taluka;
 import jakarta.persistence.CascadeType;
@@ -95,10 +94,6 @@ public class FilingApplication {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "district_id")
     private District district;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "subdistrict_id")
-    private Subdistrict subdistrict;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "taluka_id")
@@ -313,14 +308,6 @@ public class FilingApplication {
 
     public void setDistrict(District district) {
         this.district = district;
-    }
-
-    public Subdistrict getSubdistrict() {
-        return subdistrict;
-    }
-
-    public void setSubdistrict(Subdistrict subdistrict) {
-        this.subdistrict = subdistrict;
     }
 
     public Taluka getTaluka() {

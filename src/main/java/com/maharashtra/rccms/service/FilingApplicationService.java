@@ -54,7 +54,6 @@ public class FilingApplicationService {
     private final CaseCategoryRepository caseCategoryRepository;
     private final SubjectRepository subjectRepository;
     private final DistrictRepository districtRepository;
-    private final SubdistrictRepository subdistrictRepository;
     private final TalukaRepository talukaRepository;
     private final OfficeRepository officeRepository;
     private final ActRepository actRepository;
@@ -84,7 +83,6 @@ public class FilingApplicationService {
             CaseCategoryRepository caseCategoryRepository,
             SubjectRepository subjectRepository,
             DistrictRepository districtRepository,
-            SubdistrictRepository subdistrictRepository,
             TalukaRepository talukaRepository,
             OfficeRepository officeRepository,
             ActRepository actRepository,
@@ -113,7 +111,6 @@ public class FilingApplicationService {
         this.caseCategoryRepository = caseCategoryRepository;
         this.subjectRepository = subjectRepository;
         this.districtRepository = districtRepository;
-        this.subdistrictRepository = subdistrictRepository;
         this.talukaRepository = talukaRepository;
         this.officeRepository = officeRepository;
         this.actRepository = actRepository;
@@ -1117,7 +1114,6 @@ public class FilingApplicationService {
         }
 
         entity.setDistrict(resolveDistrict(header.getDistrictId()));
-        entity.setSubdistrict(resolveSubdistrict(header.getSubdistrictId()));
         entity.setTaluka(resolveTaluka(header.getTalukaId()));
         Office office = resolveOffice(header.getOfficeId(), header.getOfficeCode(), header.getPrimaryOfficeCode());
         entity.setOffice(office);
@@ -1135,7 +1131,6 @@ public class FilingApplicationService {
         header.setSubjectId(form.getSubjectId());
         header.setApplicationDescription(form.getApplicationDescription());
         header.setDistrictId(form.getDistrictId());
-        header.setSubdistrictId(form.getSubdistrictId());
         header.setTalukaId(form.getTalukaId());
         header.setOfficeId(form.getOfficeId());
         header.setOfficeCode(form.getOfficeCode());
@@ -1200,13 +1195,6 @@ public class FilingApplicationService {
             return null;
         }
         return districtRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Invalid districtId."));
-    }
-
-    private Subdistrict resolveSubdistrict(Long id) {
-        if (id == null || zeroToNull(id) == null) {
-            return null;
-        }
-        return subdistrictRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Invalid subdistrictId."));
     }
 
     private Taluka resolveTaluka(Long id) {
@@ -2113,7 +2101,6 @@ public class FilingApplicationService {
         form.setSubjectId(app.getSubject() != null ? app.getSubject().getId() : null);
         form.setApplicationDescription(app.getApplicationDescription());
         form.setDistrictId(app.getDistrict() != null ? app.getDistrict().getId() : null);
-        form.setSubdistrictId(app.getSubdistrict() != null ? app.getSubdistrict().getId() : null);
         form.setTalukaId(app.getTaluka() != null ? app.getTaluka().getId() : null);
         form.setOfficeId(app.getOffice() != null ? app.getOffice().getId() : null);
         form.setOfficeCode(app.getOffice() != null ? trimToNull(app.getOffice().getOfficeCode()) : null);

@@ -8,10 +8,10 @@ import java.util.Optional;
 
 public interface DistrictRepository extends JpaRepository<District, Long> {
     List<District> findByStateIdOrderByNameAsc(Long stateId);
-    List<District> findByStateIdAndDivisionIdOrderByNameAsc(Long stateId, Long divisionId);
+
+    List<District> findByStateIdAndDivisionCodeOrderByNameAsc(Long stateId, String divisionCode);
 
     Optional<District> findFirstByLgdCode(String lgdCode);
 
     Optional<District> findFirstByLgdCodeAndState_LgdCode(String lgdCode, String stateLgdCode);
 }
-

@@ -8,7 +8,6 @@ public class ApplicationFilingHeaderPayload {
     private Long subjectId;
     private String applicationDescription;
     private Long districtId;
-    private Long subdistrictId;
     private Long talukaId;
     private Long officeId;
     private String officeCode;
@@ -43,14 +42,6 @@ public class ApplicationFilingHeaderPayload {
 
     public void setDistrictId(Long districtId) {
         this.districtId = districtId;
-    }
-
-    public Long getSubdistrictId() {
-        return subdistrictId;
-    }
-
-    public void setSubdistrictId(Long subdistrictId) {
-        this.subdistrictId = subdistrictId;
     }
 
     public Long getTalukaId() {

@@ -52,7 +52,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/files/upload").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/lookups/states",
+                                "/api/lookups/divisions",
                                 "/api/lookups/districts",
+                                "/api/lookups/talukas",
+                                "/api/lookups/villages",
                                 "/api/lookups/pincode-details"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/lookups/**").authenticated()

@@ -10,11 +10,14 @@ import com.maharashtra.rccms.model.master.Office;
 import com.maharashtra.rccms.model.master.OfficeType;
 import com.maharashtra.rccms.model.master.State;
 import com.maharashtra.rccms.model.master.Taluka;
+import com.maharashtra.rccms.model.master.Village;
 import com.maharashtra.rccms.repository.DistrictRepository;
+import com.maharashtra.rccms.repository.DivisionRepository;
 import com.maharashtra.rccms.repository.OfficeRepository;
 import com.maharashtra.rccms.repository.OfficeTypeRepository;
-import com.maharashtra.rccms.repository.StateRepository;
 import com.maharashtra.rccms.repository.TalukaRepository;
+import com.maharashtra.rccms.repository.VillageRepository;
+import com.maharashtra.rccms.service.CoveredStateService;
 import com.maharashtra.rccms.service.PincodeLookupService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,77 +26,94 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Read-only boundary lookups. States, districts, and pincode are public
- * (registration/profile forms). Other lookups require login.
+ * Read-only boundary lookups. Hierarchy: state → division → district → taluka → village.
  */
 @RestController
 @RequestMapping("/api/lookups")
 @SuppressWarnings("null")
 public class LocationLookupController {
 
-    private final StateRepository stateRepository;
+    private final DivisionRepository divisionRepository;
     private final DistrictRepository districtRepository;
     private final TalukaRepository talukaRepository;
+    private final VillageRepository villageRepository;
     private final OfficeRepository officeRepository;
     private final OfficeTypeRepository officeTypeRepository;
     private final PincodeLookupService pincodeLookupService;
+    private final CoveredStateService coveredStateService;
 
     public LocationLookupController(
-            StateRepository stateRepository,
+            DivisionRepository divisionRepository,
             DistrictRepository districtRepository,
             TalukaRepository talukaRepository,
+            VillageRepository villageRepository,
             OfficeRepository officeRepository,
             OfficeTypeRepository officeTypeRepository,
-            PincodeLookupService pincodeLookupService
+            PincodeLookupService pincodeLookupService,
+            CoveredStateService coveredStateService
     ) {
-        this.stateRepository = stateRepository;
+        this.divisionRepository = divisionRepository;
         this.districtRepository = districtRepository;
         this.talukaRepository = talukaRepository;
+        this.villageRepository = villageRepository;
         this.officeRepository = officeRepository;
         this.officeTypeRepository = officeTypeRepository;
         this.pincodeLookupService = pincodeLookupService;
+        this.coveredStateService = coveredStateService;
     }
 
-    /**
-     * State dropdown (public — used on registration and profile forms).
-     * Example: GET /api/lookups/states
-     */
+    /** Example: GET /api/lookups/states */
     @GetMapping("/states")
     public ResponseEntity<?> states() {
-        List<BoundaryMasterResponse> items = stateRepository.findAll().stream()
-                .sorted(Comparator.comparing(State::getName, String.CASE_INSENSITIVE_ORDER))
+        List<BoundaryMasterResponse> items = coveredStateService.listStatesForDropdown().stream()
                 .map(LocationLookupController::toStateResponse)
                 .toList();
         return ResponseEntity.ok(items);
     }
 
+    /** Example: GET /api/lookups/divisions?stateId=1 */
+    @GetMapping("/divisions")
+    public ResponseEntity<?> divisions(@RequestParam("stateId") Long stateId) {
+        try {
+            coveredStateService.requireCoveredStateById(stateId);
+            List<BoundaryMasterResponse> items = divisionRepository.findByStateIdOrderByNameAsc(stateId).stream()
+                    .map(LocationLookupController::toDivisionResponse)
+                    .toList();
+            return ResponseEntity.ok(items);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
     /**
-     * District dropdown.
-     * Example: /api/lookups/districts?stateId=1 (optional divisionId).
+     * District dropdown filtered by state and optional division code.
+     * Example: GET /api/lookups/districts?stateId=1&divisionCode=1
      */
     @GetMapping("/districts")
     public ResponseEntity<?> districts(
             @RequestParam("stateId") Long stateId,
-            @RequestParam(name = "divisionId", required = false) Long divisionId
+            @RequestParam(name = "divisionCode", required = false) String divisionCode
     ) {
-        List<BoundaryMasterResponse> items = (divisionId == null
-                ? districtRepository.findByStateIdOrderByNameAsc(stateId)
-                : districtRepository.findByStateIdAndDivisionIdOrderByNameAsc(stateId, divisionId))
-                .stream()
-                .map(LocationLookupController::toDistrictResponse)
-                .toList();
-        return ResponseEntity.ok(items);
+        try {
+            coveredStateService.requireCoveredStateById(stateId);
+            String normalizedDivisionCode = normalizeDivisionCode(divisionCode);
+            List<District> districts = normalizedDivisionCode == null
+                    ? districtRepository.findByStateIdOrderByNameAsc(stateId)
+                    : districtRepository.findByStateIdAndDivisionCodeOrderByNameAsc(stateId, normalizedDivisionCode);
+            List<BoundaryMasterResponse> items = districts.stream()
+                    .map(LocationLookupController::toDistrictResponse)
+                    .toList();
+            return ResponseEntity.ok(items);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
     }
 
-    /**
-     * Taluka dropdown under a district.
-     * Example: /api/lookups/talukas?districtId=10
-     */
+    /** Example: GET /api/lookups/talukas?districtId=10 */
     @GetMapping("/talukas")
     public ResponseEntity<?> talukas(@RequestParam("districtId") Long districtId) {
         List<BoundaryMasterResponse> items = talukaRepository.findByDistrictIdOrderByNameAsc(districtId).stream()
@@ -103,11 +123,36 @@ public class LocationLookupController {
     }
 
     /**
-     * Office dropdown by office type.
-     * Preferred: /api/lookups/offices?officeTypeId=4
-     * Legacy: /api/lookups/offices?boundaryLevel=DISTRICT
-     * Optional: departmentId=...
+     * Village dropdown under a taluka or district.
+     * Examples:
+     * GET /api/lookups/villages?talukaId=100
+     * GET /api/lookups/villages?districtId=10
      */
+    @GetMapping("/villages")
+    public ResponseEntity<?> villages(
+            @RequestParam(name = "talukaId", required = false) Long talukaId,
+            @RequestParam(name = "districtId", required = false) Long districtId
+    ) {
+        try {
+            if (talukaId == null && districtId == null) {
+                throw new IllegalArgumentException("talukaId or districtId is required.");
+            }
+            List<BoundaryMasterResponse> items = loadVillages(talukaId, districtId).stream()
+                    .map(LocationLookupController::toVillageResponse)
+                    .toList();
+            return ResponseEntity.ok(items);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    private List<Village> loadVillages(Long talukaId, Long districtId) {
+        if (talukaId != null) {
+            return villageRepository.findByTalukaIdOrderByNameAsc(talukaId);
+        }
+        return villageRepository.findByTaluka_DistrictIdOrderByNameAsc(districtId);
+    }
+
     @GetMapping("/offices")
     public ResponseEntity<?> offices(
             @RequestParam(name = "officeTypeId", required = false) Long officeTypeId,
@@ -130,11 +175,35 @@ public class LocationLookupController {
                                 departmentId, normalizedLevel);
             }
 
-            List<OfficeResponse> items = offices.stream().map(OfficeResponse::from).toList();
+            List<OfficeResponse> items = offices.stream()
+                    .filter(this::officeInCoveredState)
+                    .map(OfficeResponse::from)
+                    .toList();
             return ResponseEntity.ok(items);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
+    }
+
+    @GetMapping("/pincode-details")
+    public ResponseEntity<?> pincodeDetails(@RequestParam("pincode") String pincode) {
+        try {
+            PincodeLookupResponse response = pincodeLookupService.lookupByPincode(pincode);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    private boolean officeInCoveredState(Office office) {
+        State state = office.getState();
+        if (state != null) {
+            return coveredStateService.isCoveredStateEntity(state);
+        }
+        String stateLgdCode = office.getStateLgdCode();
+        return stateLgdCode == null || coveredStateService.matchesCoveredStateLgdCode(stateLgdCode);
     }
 
     private String resolveOfficeBoundaryLevel(Long officeTypeId, String boundaryLevel, String legacyLevel) {
@@ -153,20 +222,12 @@ public class LocationLookupController {
         return BoundaryLevel.normalize(raw);
     }
 
-    /**
-     * Pincode-based address lookup for applicant/respondent forms.
-     * Example: /api/lookups/pincode-details?pincode=413402
-     */
-    @GetMapping("/pincode-details")
-    public ResponseEntity<?> pincodeDetails(@RequestParam("pincode") String pincode) {
-        try {
-            PincodeLookupResponse response = pincodeLookupService.lookupByPincode(pincode);
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        } catch (IllegalStateException ex) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", ex.getMessage()));
+    private static String normalizeDivisionCode(String divisionCode) {
+        if (divisionCode == null) {
+            return null;
         }
+        String trimmed = divisionCode.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static BoundaryMasterResponse toStateResponse(State state) {
@@ -182,26 +243,21 @@ public class LocationLookupController {
                 null,
                 null,
                 null,
-                null,
-                null,
                 null
         );
     }
 
-    private static BoundaryMasterResponse toDistrictResponse(District d) {
-        State state = d.getState();
-        Division division = d.getDivision();
+    private static BoundaryMasterResponse toDivisionResponse(Division division) {
+        State state = division.getState();
         return new BoundaryMasterResponse(
-                d.getId(),
-                d.getName(),
-                d.getLocalName(),
-                d.getLgdCode(),
+                division.getId(),
+                division.getName(),
+                division.getLocalName(),
                 null,
-                division == null ? null : division.getDivisionCode(),
+                null,
+                division.getDivisionCode(),
                 state == null ? null : state.getId(),
-                division == null ? null : division.getId(),
-                d.getId(),
-                null,
+                division.getId(),
                 null,
                 null,
                 null,
@@ -209,29 +265,68 @@ public class LocationLookupController {
         );
     }
 
-    private static BoundaryMasterResponse toTalukaResponse(Taluka t) {
-        District d = t.getDistrict();
-        State state = d == null ? null : d.getState();
-        Division division = d == null ? null : d.getDivision();
-        String districtLgdCode = t.getDistrictLgdCode();
-        if (districtLgdCode == null && d != null) {
-            districtLgdCode = d.getLgdCode();
+    private static BoundaryMasterResponse toDistrictResponse(District district) {
+        State state = district.getState();
+        return new BoundaryMasterResponse(
+                district.getId(),
+                district.getName(),
+                district.getLocalName(),
+                district.getLgdCode(),
+                null,
+                district.getDivisionCode(),
+                state == null ? null : state.getId(),
+                null,
+                district.getId(),
+                null,
+                null,
+                null
+        );
+    }
+
+    private static BoundaryMasterResponse toTalukaResponse(Taluka taluka) {
+        District district = taluka.getDistrict();
+        State state = district == null ? null : district.getState();
+        String districtLgdCode = taluka.getDistrictLgdCode();
+        if (districtLgdCode == null && district != null) {
+            districtLgdCode = district.getLgdCode();
         }
         return new BoundaryMasterResponse(
-                t.getId(),
-                t.getName(),
-                t.getLocalName(),
-                t.getLgdCode(),
+                taluka.getId(),
+                taluka.getName(),
+                taluka.getLocalName(),
+                taluka.getLgdCode(),
                 null,
-                division == null ? null : division.getDivisionCode(),
+                district == null ? null : district.getDivisionCode(),
                 state == null ? null : state.getId(),
-                division == null ? null : division.getId(),
-                d == null ? null : d.getId(),
+                null,
+                district == null ? null : district.getId(),
                 districtLgdCode,
-                null,
-                null,
-                t.getId(),
+                taluka.getId(),
                 null
+        );
+    }
+
+    private static BoundaryMasterResponse toVillageResponse(Village village) {
+        Taluka taluka = village.getTaluka();
+        District district = taluka == null ? null : taluka.getDistrict();
+        State state = district == null ? null : district.getState();
+        String talukaLgdCode = village.getTalukaLgdCode();
+        if (talukaLgdCode == null && taluka != null) {
+            talukaLgdCode = taluka.getLgdCode();
+        }
+        return new BoundaryMasterResponse(
+                village.getId(),
+                village.getName(),
+                village.getLocalName(),
+                village.getLgdCode(),
+                null,
+                district == null ? null : district.getDivisionCode(),
+                state == null ? null : state.getId(),
+                null,
+                district == null ? null : district.getId(),
+                null,
+                taluka == null ? null : taluka.getId(),
+                talukaLgdCode
         );
     }
 }

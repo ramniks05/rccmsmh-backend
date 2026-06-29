@@ -16,8 +16,6 @@ public class ApplicationFormNestedPayload {
     private String applicationDescription;
 
     private Long districtId;
-    /** UI may send 0 for "unset" */
-    private Long subdistrictId;
     private Long talukaId;
     private Long officeId;
     private String officeCode;
@@ -67,14 +65,6 @@ public class ApplicationFormNestedPayload {
 
     public void setDistrictId(Long districtId) {
         this.districtId = districtId;
-    }
-
-    public Long getSubdistrictId() {
-        return subdistrictId;
-    }
-
-    public void setSubdistrictId(Long subdistrictId) {
-        this.subdistrictId = subdistrictId;
     }
 
     public Long getTalukaId() {

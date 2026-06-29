@@ -6,11 +6,8 @@ import com.maharashtra.rccms.model.AdvocateRegistration;
 import com.maharashtra.rccms.model.Gender;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.State;
-import com.maharashtra.rccms.model.master.Subdistrict;
 import com.maharashtra.rccms.repository.AdvocateRegistrationRepository;
 import com.maharashtra.rccms.repository.DistrictRepository;
-import com.maharashtra.rccms.repository.SubdistrictRepository;
-import com.maharashtra.rccms.repository.StateRepository;
 import com.maharashtra.rccms.util.AdvocateRegistrationSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,23 +19,20 @@ import java.util.Objects;
 public class AdvocateProfileService {
 
     private final AdvocateRegistrationRepository advocateRegistrationRepository;
-    private final StateRepository stateRepository;
     private final DistrictRepository districtRepository;
-    private final SubdistrictRepository subdistrictRepository;
     private final LgdMasterLookupService lgdMasterLookupService;
+    private final CoveredStateService coveredStateService;
 
     public AdvocateProfileService(
             AdvocateRegistrationRepository advocateRegistrationRepository,
-            StateRepository stateRepository,
             DistrictRepository districtRepository,
-            SubdistrictRepository subdistrictRepository,
-            LgdMasterLookupService lgdMasterLookupService
+            LgdMasterLookupService lgdMasterLookupService,
+            CoveredStateService coveredStateService
     ) {
         this.advocateRegistrationRepository = advocateRegistrationRepository;
-        this.stateRepository = stateRepository;
         this.districtRepository = districtRepository;
-        this.subdistrictRepository = subdistrictRepository;
         this.lgdMasterLookupService = lgdMasterLookupService;
+        this.coveredStateService = coveredStateService;
     }
 
     @Transactional(readOnly = true)
@@ -55,7 +49,6 @@ public class AdvocateProfileService {
         AdvocateRegistration row = resolveCurrentAdvocate(principal);
         validateProfileUpdate(request, row);
 
-        // Names and bar enrollment are registration-only; payload may echo GET values but must not change.
         row.setMobileNumber(request.getMobileNumber().trim());
 
         String newEmail = request.getEmail().trim().toLowerCase();
@@ -105,8 +98,6 @@ public class AdvocateProfileService {
         out.setStateName(row.getStateName());
         out.setDistrictId(row.getDistrictId());
         out.setDistrictName(row.getDistrictName());
-        out.setSubdistrictId(row.getSubdistrictId());
-        out.setSubdistrictName(row.getSubdistrictName());
         out.setVillage(row.getVillage());
         out.setAddressLine1(row.getAddressLine1());
         out.setAddressLine2(row.getAddressLine2());
@@ -143,9 +134,6 @@ public class AdvocateProfileService {
         if (request.getDistrictId() == null && !AdvocateRegistrationSupport.hasText(request.getDistrictName())) {
             throw new IllegalArgumentException("District is required.");
         }
-        if (request.getSubdistrictId() == null && !AdvocateRegistrationSupport.hasText(request.getSubdistrictName())) {
-            throw new IllegalArgumentException("Sub district is required.");
-        }
         validateText(request.getVillage(), "Village is required.");
         validateText(request.getAddressLine1(), "Address line 1 is required.");
     }
@@ -153,24 +141,6 @@ public class AdvocateProfileService {
     private void applyLocationFields(AdvocateRegistration row, AdvocateProfileUpdateRequest request) {
         Long stateId = request.getStateId();
         Long districtId = request.getDistrictId();
-        Long subdistrictId = request.getSubdistrictId();
-
-        if (subdistrictId != null) {
-            Subdistrict subdistrict = subdistrictRepository.findById(subdistrictId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid subdistrictId."));
-            row.setSubdistrictId(subdistrict.getId());
-            row.setSubdistrictName(subdistrict.getName());
-            District district = subdistrict.getDistrict();
-            if (district != null) {
-                row.setDistrictId(district.getId());
-                row.setDistrictName(district.getName());
-                if (district.getState() != null) {
-                    row.setStateId(district.getState().getId());
-                    row.setStateName(district.getState().getName());
-                }
-            }
-            return;
-        }
 
         if (districtId != null) {
             District district = districtRepository.findById(districtId)
@@ -187,11 +157,10 @@ public class AdvocateProfileService {
         }
 
         row.setSubdistrictId(null);
-        row.setSubdistrictName(requiredText(request.getSubdistrictName(), "subdistrictName"));
+        row.setSubdistrictName(null);
 
         if (stateId != null) {
-            State state = stateRepository.findById(stateId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid stateId."));
+            State state = coveredStateService.requireCoveredStateById(stateId);
             row.setStateId(state.getId());
             row.setStateName(state.getName());
         } else if (!AdvocateRegistrationSupport.hasText(row.getStateName())) {
@@ -212,7 +181,6 @@ public class AdvocateProfileService {
         }
     }
 
-    /** Names are sent on PUT (from GET) but must match registration; profile cannot change them. */
     private static void assertReadOnlyName(String sent, String stored, String label, boolean required) {
         if (!required && !AdvocateRegistrationSupport.hasText(sent) && !AdvocateRegistrationSupport.hasText(stored)) {
             return;
@@ -237,11 +205,11 @@ public class AdvocateProfileService {
         }
     }
 
-    private static String requiredText(String value, String field) {
-        String t = AdvocateRegistrationSupport.trimToNull(value);
-        if (t == null) {
-            throw new IllegalArgumentException(field + " is required.");
+    private static String requiredText(String value, String fieldName) {
+        String trimmed = AdvocateRegistrationSupport.trimToNull(value);
+        if (trimmed == null) {
+            throw new IllegalArgumentException(fieldName + " is required.");
         }
-        return t;
+        return trimmed;
     }
 }

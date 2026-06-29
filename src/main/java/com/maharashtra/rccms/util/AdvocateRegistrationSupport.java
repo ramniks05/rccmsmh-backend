@@ -71,7 +71,7 @@ public final class AdvocateRegistrationSupport {
                 row.getAddressLine2(),
                 row.getAddressLine3(),
                 row.getVillage(),
-                row.getSubdistrictName(),
+                null,
                 row.getDistrictName(),
                 row.getStateName(),
                 row.getPinCode()
@@ -91,7 +91,6 @@ public final class AdvocateRegistrationSupport {
                 && hasText(row.getPinCode())
                 && hasText(row.getStateName())
                 && hasText(row.getDistrictName())
-                && hasText(row.getSubdistrictName())
                 && hasText(row.getVillage())
                 && hasText(row.getAddressLine1());
     }

@@ -4,7 +4,7 @@ package com.maharashtra.rccms.dto;
  * Profile completion after registration ({@code PUT /api/advocates/me/profile}).
  * <p>
  * Updatable: email, mobileNumber, gender, pinCode, address (stateName, districtName,
- * subdistrictName, village, addressLine1).
+ * village, addressLine1).
  * <p>
  * Read-only (must match {@code GET /api/advocates/me/profile}): firstName, middleName, lastName.
  * Bar enrollment and place of practice are not part of this request.
@@ -25,8 +25,6 @@ public class AdvocateProfileUpdateRequest {
     private String stateName;
     private Long districtId;
     private String districtName;
-    private Long subdistrictId;
-    private String subdistrictName;
     private String village;
     private String addressLine1;
     private String addressLine2;
@@ -119,22 +117,6 @@ public class AdvocateProfileUpdateRequest {
 
     public void setDistrictName(String districtName) {
         this.districtName = districtName;
-    }
-
-    public Long getSubdistrictId() {
-        return subdistrictId;
-    }
-
-    public void setSubdistrictId(Long subdistrictId) {
-        this.subdistrictId = subdistrictId;
-    }
-
-    public String getSubdistrictName() {
-        return subdistrictName;
-    }
-
-    public void setSubdistrictName(String subdistrictName) {
-        this.subdistrictName = subdistrictName;
     }
 
     public String getVillage() {

@@ -32,8 +32,6 @@ public class AdvocateProfileResponse {
     private String stateName;
     private Long districtId;
     private String districtName;
-    private Long subdistrictId;
-    private String subdistrictName;
     private String village;
     private String addressLine1;
     private String addressLine2;
@@ -242,22 +240,6 @@ public class AdvocateProfileResponse {
 
     public void setDistrictName(String districtName) {
         this.districtName = districtName;
-    }
-
-    public Long getSubdistrictId() {
-        return subdistrictId;
-    }
-
-    public void setSubdistrictId(Long subdistrictId) {
-        this.subdistrictId = subdistrictId;
-    }
-
-    public String getSubdistrictName() {
-        return subdistrictName;
-    }
-
-    public void setSubdistrictName(String subdistrictName) {
-        this.subdistrictName = subdistrictName;
     }
 
     public String getVillage() {

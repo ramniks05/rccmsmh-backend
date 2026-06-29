@@ -1,5 +1,6 @@
 package com.maharashtra.rccms.model.master;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
@@ -7,7 +8,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 /**
- * District under state. {@link #division} is optional when import uses state → district directly.
+ * District under state. Linked to division by {@link #divisionCode} (not a foreign key).
  */
 @Entity
 @Table(name = "master_district")
@@ -17,9 +18,9 @@ public class District extends BoundaryNamedLgdBase {
     @JoinColumn(name = "state_id", nullable = false)
     private State state;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "division_id")
-    private Division division;
+    /** Revenue division code (matches {@link Division#getDivisionCode()} for the same state). */
+    @Column(name = "division_code", length = 64)
+    private String divisionCode;
 
     public State getState() {
         return state;
@@ -29,11 +30,11 @@ public class District extends BoundaryNamedLgdBase {
         this.state = state;
     }
 
-    public Division getDivision() {
-        return division;
+    public String getDivisionCode() {
+        return divisionCode;
     }
 
-    public void setDivision(Division division) {
-        this.division = division;
+    public void setDivisionCode(String divisionCode) {
+        this.divisionCode = divisionCode;
     }
 }

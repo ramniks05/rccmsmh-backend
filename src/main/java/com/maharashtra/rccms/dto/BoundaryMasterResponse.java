@@ -7,17 +7,13 @@ public class BoundaryMasterResponse {
     private final String lgdCode;
     /** Present only for state master rows; null for other boundary levels. */
     private final String stateOrUT;
-    /** Present only for division master rows; null for other boundary levels. */
+    /** Division code on division/district rows; null for other boundary levels. */
     private final String divisionCode;
 
     private final Long stateId;
     private final Long divisionId;
     private final Long districtId;
-    /** Present for subdistrict master rows; null for other boundary levels. */
     private final String districtLgdCode;
-    private final Long subdistrictId;
-    /** Present for taluka master rows; null for other boundary levels. */
-    private final String subdistrictLgdCode;
     private final Long talukaId;
     /** Present for village master rows; null for other boundary levels. */
     private final String talukaLgdCode;
@@ -33,8 +29,6 @@ public class BoundaryMasterResponse {
             Long divisionId,
             Long districtId,
             String districtLgdCode,
-            Long subdistrictId,
-            String subdistrictLgdCode,
             Long talukaId,
             String talukaLgdCode
     ) {
@@ -48,8 +42,6 @@ public class BoundaryMasterResponse {
         this.divisionId = divisionId;
         this.districtId = districtId;
         this.districtLgdCode = districtLgdCode;
-        this.subdistrictId = subdistrictId;
-        this.subdistrictLgdCode = subdistrictLgdCode;
         this.talukaId = talukaId;
         this.talukaLgdCode = talukaLgdCode;
     }
@@ -94,14 +86,6 @@ public class BoundaryMasterResponse {
         return districtLgdCode;
     }
 
-    public Long getSubdistrictId() {
-        return subdistrictId;
-    }
-
-    public String getSubdistrictLgdCode() {
-        return subdistrictLgdCode;
-    }
-
     public Long getTalukaId() {
         return talukaId;
     }
@@ -110,4 +94,3 @@ public class BoundaryMasterResponse {
         return talukaLgdCode;
     }
 }
-

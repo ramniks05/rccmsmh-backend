@@ -4,7 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.MappedSuperclass;
 
 /**
- * Boundary master with LGD code (state, district, subdistrict, taluka, village).
+ * Boundary master with LGD code (state, district, taluka, village).
  * {@link Division} does not use LGD codes and extends {@link BoundaryNamedBase} instead.
  */
 @MappedSuperclass

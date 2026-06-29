@@ -72,6 +72,7 @@ import com.maharashtra.rccms.repository.StateRepository;
 import com.maharashtra.rccms.repository.SubjectRepository;
 import com.maharashtra.rccms.repository.TalukaRepository;
 import com.maharashtra.rccms.repository.VillageRepository;
+import com.maharashtra.rccms.service.CoveredStateService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -111,6 +112,7 @@ public class AdminMastersController {
     private final DistrictRepository districtRepository;
     private final TalukaRepository talukaRepository;
     private final VillageRepository villageRepository;
+    private final CoveredStateService coveredStateService;
 
     public AdminMastersController(
             ActRepository actRepository,
@@ -128,7 +130,8 @@ public class AdminMastersController {
             DivisionRepository divisionRepository,
             DistrictRepository districtRepository,
             TalukaRepository talukaRepository,
-            VillageRepository villageRepository
+            VillageRepository villageRepository,
+            CoveredStateService coveredStateService
     ) {
         this.actRepository = actRepository;
         this.caseCategoryRepository = caseCategoryRepository;
@@ -146,6 +149,7 @@ public class AdminMastersController {
         this.districtRepository = districtRepository;
         this.talukaRepository = talukaRepository;
         this.villageRepository = villageRepository;
+        this.coveredStateService = coveredStateService;
     }
 
     @PostMapping("/office-types")
@@ -491,6 +495,7 @@ public class AdminMastersController {
                 .filter(o -> boundaryLevel == null || (o.getOfficeType() != null
                         && o.getOfficeType().getBoundaryLevel() != null
                         && boundaryLevel.equalsIgnoreCase(o.getOfficeType().getBoundaryLevel())))
+                .filter(this::officeInCoveredState)
                 .map(OfficeResponse::from)
                 .toList();
         return ResponseEntity.ok(items);
@@ -764,8 +769,7 @@ public class AdminMastersController {
         try {
             Long stateId = request.getStateId();
             if (stateId == null) throw new IllegalArgumentException("stateId is required");
-            State state = stateRepository.findById(stateId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid stateId"));
+            State state = coveredStateService.requireCoveredStateById(stateId);
 
             Department department = new Department();
             applyDepartmentFields(department, request.getName(), request.getLocalName());
@@ -779,10 +783,28 @@ public class AdminMastersController {
 
     @GetMapping("/departments")
     public ResponseEntity<?> listDepartments() {
-        List<DepartmentResponse> items = departmentRepository.findAll().stream()
+        List<Department> departments = listDepartmentsForAdmin();
+        List<DepartmentResponse> items = departments.stream()
                 .map(AdminMastersController::toDepartmentResponse)
                 .toList();
         return ResponseEntity.ok(items);
+    }
+
+    private List<Department> listDepartmentsForAdmin() {
+        Long coveredStateId = coveredStateService.coveredStateIdOrNull();
+        if (coveredStateId != null) {
+            List<Department> scoped = departmentRepository.findByStateIdOrderByNameAsc(coveredStateId);
+            if (!scoped.isEmpty()) {
+                return scoped;
+            }
+        }
+        List<Department> filtered = departmentRepository.findAll().stream()
+                .filter(d -> d.getState() != null && coveredStateService.isCoveredStateEntity(d.getState()))
+                .toList();
+        if (!filtered.isEmpty()) {
+            return filtered;
+        }
+        return departmentRepository.findAll();
     }
 
     @PutMapping("/departments/{id}")
@@ -794,8 +816,7 @@ public class AdminMastersController {
 
             Long stateId = request.getStateId();
             if (stateId == null) throw new IllegalArgumentException("stateId is required");
-            State state = stateRepository.findById(stateId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid stateId"));
+            State state = coveredStateService.requireCoveredStateById(stateId);
 
             applyDepartmentFields(department, request.getName(), request.getLocalName());
             department.setState(state);
@@ -824,11 +845,12 @@ public class AdminMastersController {
     @PostMapping("/states")
     public ResponseEntity<?> createState(@RequestBody StateCreateRequest request) {
         try {
+            coveredStateService.requireCoveredStateLgdOnCreate(request.getLgdCode());
             State state = new State();
             applyBoundaryFields(state, request);
             state.setStateOrUT(request.getStateOrUT());
             state = stateRepository.save(state);
-            return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(state, null, null, null, null, null));
+            return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(state, state.getId(), null, null, null));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -836,8 +858,8 @@ public class AdminMastersController {
 
     @GetMapping("/states")
     public ResponseEntity<?> listStates() {
-        List<BoundaryMasterResponse> items = stateRepository.findAll().stream()
-                .map(state -> toResponse(state, null, null, null, null, null))
+        List<BoundaryMasterResponse> items = coveredStateService.listStatesForDropdown().stream()
+                .map(state -> toResponse(state, state.getId(), null, null, null))
                 .toList();
         return ResponseEntity.ok(items);
     }
@@ -847,8 +869,7 @@ public class AdminMastersController {
         try {
             Long stateId = request.getStateId();
             if (stateId == null) throw new IllegalArgumentException("stateId is required");
-            State state = stateRepository.findById(stateId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid stateId"));
+            State state = coveredStateService.requireCoveredStateById(stateId);
 
             Division newDivision = new Division();
             applyNamedBoundaryFields(newDivision, request);
@@ -856,7 +877,7 @@ public class AdminMastersController {
             newDivision.setState(state);
             newDivision = divisionRepository.save(newDivision);
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(toResponse(newDivision, state.getId(), null, null, null, null));
+                    .body(toResponse(newDivision, state.getId(), null, null, null));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -865,8 +886,8 @@ public class AdminMastersController {
     @GetMapping("/divisions")
     public ResponseEntity<?> listDivisions(@RequestParam(name = "stateId", required = false) Long stateId) {
         List<BoundaryMasterResponse> items = divisionRepository.findAll().stream()
-                .filter(d -> stateId == null || (d.getState() != null && stateId.equals(d.getState().getId())))
-                .map(d -> toResponse(d, d.getState() == null ? null : d.getState().getId(), null, null, null, null))
+                .filter(d -> coveredStateService.matchesOptionalStateFilter(stateId, d.getState()))
+                .map(d -> toResponse(d, d.getState() == null ? null : d.getState().getId(), null, null, null))
                 .toList();
         return ResponseEntity.ok(items);
     }
@@ -876,23 +897,21 @@ public class AdminMastersController {
         try {
             Long stateId = request.getStateId();
             if (stateId == null) throw new IllegalArgumentException("stateId is required");
-            State state = stateRepository.findById(stateId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid stateId"));
+            State state = coveredStateService.requireCoveredStateById(stateId);
 
-            Division division = null;
-            Long divisionId = request.getDivisionId();
-            if (divisionId != null) {
-                division = divisionRepository.findById(divisionId)
-                        .orElseThrow(() -> new IllegalArgumentException("Invalid divisionId"));
+            String divisionCode = trimToNull(request.getDivisionCode());
+            if (divisionCode != null) {
+                divisionRepository.findFirstByStateIdAndDivisionCode(stateId, divisionCode)
+                        .orElseThrow(() -> new IllegalArgumentException("Invalid divisionCode for selected state"));
             }
 
             District district = new District();
             applyBoundaryFields(district, request);
             district.setState(state);
-            district.setDivision(division);
+            district.setDivisionCode(divisionCode);
             district = districtRepository.save(district);
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(toResponse(district, state.getId(), division == null ? null : division.getId(), null, null, null));
+                    .body(toResponse(district, state.getId(), divisionCode, null, null));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -901,16 +920,16 @@ public class AdminMastersController {
     @GetMapping("/districts")
     public ResponseEntity<?> listDistricts(
             @RequestParam(name = "stateId", required = false) Long stateId,
-            @RequestParam(name = "divisionId", required = false) Long divisionId
+            @RequestParam(name = "divisionCode", required = false) String divisionCode
     ) {
+        String normalizedDivisionCode = trimToNull(divisionCode);
         List<BoundaryMasterResponse> items = districtRepository.findAll().stream()
-                .filter(d -> stateId == null || (d.getState() != null && stateId.equals(d.getState().getId())))
-                .filter(d -> divisionId == null || (d.getDivision() != null && divisionId.equals(d.getDivision().getId())))
+                .filter(d -> coveredStateService.matchesOptionalStateFilter(stateId, d.getState()))
+                .filter(d -> normalizedDivisionCode == null || normalizedDivisionCode.equals(d.getDivisionCode()))
                 .map(d -> toResponse(
                         d,
                         d.getState() == null ? null : d.getState().getId(),
-                        d.getDivision() == null ? null : d.getDivision().getId(),
-                        null,
+                        d.getDivisionCode(),
                         null,
                         null
                 ))
@@ -932,9 +951,9 @@ public class AdminMastersController {
             taluka = talukaRepository.save(taluka);
 
             Long stateId = district.getState() == null ? null : district.getState().getId();
-            Long divisionId = district.getDivision() == null ? null : district.getDivision().getId();
+            String divisionCode = district.getDivisionCode();
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(toResponse(taluka, stateId, divisionId, district.getId(), null, null));
+                    .body(toResponse(taluka, stateId, divisionCode, district.getId(), null));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
@@ -944,12 +963,16 @@ public class AdminMastersController {
     public ResponseEntity<?> listTalukas(@RequestParam(name = "districtId", required = false) Long districtId) {
         List<BoundaryMasterResponse> items = talukaRepository.findAll().stream()
                 .filter(t -> districtId == null || (t.getDistrict() != null && districtId.equals(t.getDistrict().getId())))
+                .filter(t -> {
+                    District d = t.getDistrict();
+                    return d != null && d.getState() != null && coveredStateService.isCoveredStateEntity(d.getState());
+                })
                 .map(t -> {
                     District d = t.getDistrict();
                     Long stateId = (d == null || d.getState() == null) ? null : d.getState().getId();
-                    Long divisionId = (d == null || d.getDivision() == null) ? null : d.getDivision().getId();
+                    String divisionCode = d == null ? null : d.getDivisionCode();
                     Long dId = d == null ? null : d.getId();
-                    return toResponse(t, stateId, divisionId, dId, null, t.getId());
+                    return toResponse(t, stateId, divisionCode, dId, t.getId());
                 })
                 .toList();
         return ResponseEntity.ok(items);
@@ -971,29 +994,69 @@ public class AdminMastersController {
             District district = taluka.getDistrict();
             Long districtId = district == null ? null : district.getId();
             Long stateId = (district == null || district.getState() == null) ? null : district.getState().getId();
-            Long divisionId = (district == null || district.getDivision() == null) ? null : district.getDivision().getId();
+            String divisionCode = district == null ? null : district.getDivisionCode();
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(toResponse(village, stateId, divisionId, districtId, null, taluka.getId()));
+                    .body(toResponse(village, stateId, divisionCode, districtId, taluka.getId()));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
     }
 
     @GetMapping("/villages")
-    public ResponseEntity<?> listVillages(@RequestParam(name = "talukaId", required = false) Long talukaId) {
-        List<BoundaryMasterResponse> items = villageRepository.findAll().stream()
-                .filter(v -> talukaId == null || (v.getTaluka() != null && talukaId.equals(v.getTaluka().getId())))
-                .map(v -> {
-                    Taluka t = v.getTaluka();
-                    District d = t == null ? null : t.getDistrict();
-                    Long districtId = d == null ? null : d.getId();
-                    Long stateId = (d == null || d.getState() == null) ? null : d.getState().getId();
-                    Long divisionId = (d == null || d.getDivision() == null) ? null : d.getDivision().getId();
-                    Long tId = t == null ? null : t.getId();
-                    return toResponse(v, stateId, divisionId, districtId, null, tId);
-                })
+    public ResponseEntity<?> listVillages(
+            @RequestParam(name = "talukaId", required = false) Long talukaId,
+            @RequestParam(name = "districtId", required = false) Long districtId,
+            @RequestParam(name = "stateId", required = false) Long stateId,
+            @RequestParam(name = "divisionCode", required = false) String divisionCode,
+            @RequestParam(name = "talukaLgdCode", required = false) String talukaLgdCode
+    ) {
+        String normalizedDivisionCode = trimToNull(divisionCode);
+        String normalizedTalukaLgdCode = trimToNull(talukaLgdCode);
+        List<Village> villages = loadVillagesForFilter(talukaId, districtId, normalizedTalukaLgdCode);
+        List<BoundaryMasterResponse> items = villages.stream()
+                .filter(v -> matchesVillageHierarchyFilter(v, stateId, normalizedDivisionCode))
+                .map(this::toVillageMasterResponse)
                 .toList();
         return ResponseEntity.ok(items);
+    }
+
+    private List<Village> loadVillagesForFilter(Long talukaId, Long districtId, String talukaLgdCode) {
+        if (talukaId != null) {
+            return villageRepository.findByTalukaIdOrderByNameAsc(talukaId);
+        }
+        if (districtId != null) {
+            return villageRepository.findByTaluka_DistrictIdOrderByNameAsc(districtId);
+        }
+        if (talukaLgdCode != null) {
+            return villageRepository.findByTalukaLgdCodeOrderByNameAsc(talukaLgdCode);
+        }
+        return villageRepository.findAll();
+    }
+
+    private boolean matchesVillageHierarchyFilter(Village village, Long stateId, String divisionCode) {
+        Taluka taluka = village.getTaluka();
+        District district = taluka == null ? null : taluka.getDistrict();
+        State state = district == null ? null : district.getState();
+        if (!coveredStateService.isCoveredStateEntity(state)) {
+            return false;
+        }
+        if (stateId != null && (state == null || !stateId.equals(state.getId()))) {
+            return false;
+        }
+        if (divisionCode != null && (district == null || !divisionCode.equals(district.getDivisionCode()))) {
+            return false;
+        }
+        return true;
+    }
+
+    private BoundaryMasterResponse toVillageMasterResponse(Village village) {
+        Taluka taluka = village.getTaluka();
+        District district = taluka == null ? null : taluka.getDistrict();
+        Long districtId = district == null ? null : district.getId();
+        Long stateId = (district == null || district.getState() == null) ? null : district.getState().getId();
+        String divisionCode = district == null ? null : district.getDivisionCode();
+        Long talukaId = taluka == null ? null : taluka.getId();
+        return toResponse(village, stateId, divisionCode, districtId, talukaId);
     }
 
     private static void applyNamedBoundaryFields(BoundaryNamedBase entity, BoundaryNamedCreateRequest request) {
@@ -1009,12 +1072,11 @@ public class AdminMastersController {
         entity.setLgdCode(request.getLgdCode());
     }
 
-    private static BoundaryMasterResponse toResponse(
+    private BoundaryMasterResponse toResponse(
             BoundaryNamedBase entity,
             Long stateId,
-            Long divisionId,
+            String parentDivisionCode,
             Long districtId,
-            Long subdistrictId,
             Long talukaId
     ) {
         String lgdCode = null;
@@ -1025,12 +1087,18 @@ public class AdminMastersController {
         if (entity instanceof State) {
             stateOrUT = ((State) entity).getStateOrUT();
         }
-        String divisionCode = null;
+        String divisionCode = parentDivisionCode;
+        Long divisionId = null;
         if (entity instanceof Division division) {
             divisionCode = division.getDivisionCode();
+            divisionId = division.getId();
+        } else if (entity instanceof District district) {
+            divisionCode = district.getDivisionCode();
+            divisionId = resolveDivisionId(stateId, divisionCode);
+        } else {
+            divisionId = resolveDivisionId(stateId, divisionCode);
         }
         String districtLgdCode = null;
-        String subdistrictLgdCode = null;
         if (entity instanceof Taluka taluka) {
             districtLgdCode = taluka.getDistrictLgdCode();
         }
@@ -1049,11 +1117,18 @@ public class AdminMastersController {
                 divisionId,
                 districtId,
                 districtLgdCode,
-                subdistrictId,
-                subdistrictLgdCode,
                 talukaId,
                 talukaLgdCode
         );
+    }
+
+    private Long resolveDivisionId(Long stateId, String divisionCode) {
+        if (stateId == null || divisionCode == null || divisionCode.isBlank()) {
+            return null;
+        }
+        return divisionRepository.findFirstByStateIdAndDivisionCode(stateId, divisionCode.trim())
+                .map(Division::getId)
+                .orElse(null);
     }
 
     private static void applyVillageTalukaRef(Village village, Taluka taluka, String rawTalukaLgdCode) {
@@ -1247,6 +1322,9 @@ public class AdminMastersController {
                                          String districtLgdCode,
                                          String talukaLgdCode) {
         State state = resolveOptionalBoundary(stateId, stateRepository, "stateId");
+        if (state != null) {
+            coveredStateService.requireCoveredStateById(state.getId());
+        }
         District district = resolveOptionalBoundary(districtId, districtRepository, "districtId");
         Taluka taluka = resolveOptionalBoundary(talukaId, talukaRepository, "talukaId");
         office.setState(state);
@@ -1262,6 +1340,15 @@ public class AdminMastersController {
         office.setTalukaLgdCode(
                 resolveParentLgdCode(talukaLgdCode, taluka == null ? null : taluka.getLgdCode(), "talukaLgdCode")
         );
+    }
+
+    private boolean officeInCoveredState(Office office) {
+        State state = office.getState();
+        if (state != null) {
+            return coveredStateService.isCoveredStateEntity(state);
+        }
+        String stateLgdCode = office.getStateLgdCode();
+        return stateLgdCode == null || coveredStateService.matchesCoveredStateLgdCode(stateLgdCode);
     }
 
     private static <T> T resolveOptionalBoundary(Long id,

@@ -73,6 +73,7 @@ import com.maharashtra.rccms.repository.SubjectRepository;
 import com.maharashtra.rccms.repository.TalukaRepository;
 import com.maharashtra.rccms.repository.VillageRepository;
 import com.maharashtra.rccms.service.CoveredStateService;
+import com.maharashtra.rccms.service.OfficeLookupService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -113,6 +114,7 @@ public class AdminMastersController {
     private final TalukaRepository talukaRepository;
     private final VillageRepository villageRepository;
     private final CoveredStateService coveredStateService;
+    private final OfficeLookupService officeLookupService;
 
     public AdminMastersController(
             ActRepository actRepository,
@@ -131,7 +133,8 @@ public class AdminMastersController {
             DistrictRepository districtRepository,
             TalukaRepository talukaRepository,
             VillageRepository villageRepository,
-            CoveredStateService coveredStateService
+            CoveredStateService coveredStateService,
+            OfficeLookupService officeLookupService
     ) {
         this.actRepository = actRepository;
         this.caseCategoryRepository = caseCategoryRepository;
@@ -150,6 +153,7 @@ public class AdminMastersController {
         this.talukaRepository = talukaRepository;
         this.villageRepository = villageRepository;
         this.coveredStateService = coveredStateService;
+        this.officeLookupService = officeLookupService;
     }
 
     @PostMapping("/office-types")
@@ -487,18 +491,22 @@ public class AdminMastersController {
     public ResponseEntity<?> listOffices(
             @RequestParam(name = "departmentId", required = false) Long departmentId,
             @RequestParam(name = "officeTypeId", required = false) Long officeTypeId,
-            @RequestParam(name = "boundaryLevel", required = false) String boundaryLevel
+            @RequestParam(name = "boundaryLevel", required = false) String boundaryLevel,
+            @RequestParam(name = "stateId", required = false) Long stateId,
+            @RequestParam(name = "divisionId", required = false) Long divisionId,
+            @RequestParam(name = "divisionCode", required = false) String divisionCode,
+            @RequestParam(name = "districtId", required = false) Long districtId,
+            @RequestParam(name = "talukaId", required = false) Long talukaId
     ) {
-        List<OfficeResponse> items = officeRepository.findAll().stream()
-                .filter(o -> departmentId == null || (o.getDepartment() != null && departmentId.equals(o.getDepartment().getId())))
-                .filter(o -> officeTypeId == null || (o.getOfficeType() != null && officeTypeId.equals(o.getOfficeType().getId())))
-                .filter(o -> boundaryLevel == null || (o.getOfficeType() != null
-                        && o.getOfficeType().getBoundaryLevel() != null
-                        && boundaryLevel.equalsIgnoreCase(o.getOfficeType().getBoundaryLevel())))
-                .filter(this::officeInCoveredState)
-                .map(OfficeResponse::from)
-                .toList();
-        return ResponseEntity.ok(items);
+        try {
+            List<OfficeResponse> items = officeLookupService.listOfficeResponses(
+                    departmentId, officeTypeId, boundaryLevel,
+                    stateId, divisionId, divisionCode, districtId, talukaId
+            );
+            return ResponseEntity.ok(items);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
     }
 
     @PutMapping("/offices/{id}")
@@ -1340,15 +1348,6 @@ public class AdminMastersController {
         office.setTalukaLgdCode(
                 resolveParentLgdCode(talukaLgdCode, taluka == null ? null : taluka.getLgdCode(), "talukaLgdCode")
         );
-    }
-
-    private boolean officeInCoveredState(Office office) {
-        State state = office.getState();
-        if (state != null) {
-            return coveredStateService.isCoveredStateEntity(state);
-        }
-        String stateLgdCode = office.getStateLgdCode();
-        return stateLgdCode == null || coveredStateService.matchesCoveredStateLgdCode(stateLgdCode);
     }
 
     private static <T> T resolveOptionalBoundary(Long id,

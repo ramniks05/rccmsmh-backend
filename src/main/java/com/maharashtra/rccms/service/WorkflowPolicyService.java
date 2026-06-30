@@ -1,6 +1,7 @@
 package com.maharashtra.rccms.service;
 
 import com.maharashtra.rccms.model.EmployeePosting;
+import com.maharashtra.rccms.util.PresidingOfficerDesignationSupport;
 import com.maharashtra.rccms.model.caseflow.CaseHearing;
 import com.maharashtra.rccms.model.caseflow.CaseJudgmentWorkflow;
 import com.maharashtra.rccms.model.caseflow.CaseJudgmentWorkflowStatus;
@@ -26,8 +27,6 @@ import java.util.Set;
 @Service
 public class WorkflowPolicyService {
 
-    private static final Long PRESIDING_OFFICER_DESIGNATION_ID = 1L;
-
     private final CaseWorkflowConfigService workflowConfigService;
 
     public WorkflowPolicyService(CaseWorkflowConfigService workflowConfigService) {
@@ -50,8 +49,7 @@ public class WorkflowPolicyService {
     }
 
     public boolean isPo(EmployeePosting posting) {
-        Long designationId = posting.getDesignation() != null ? posting.getDesignation().getId() : null;
-        return Objects.equals(designationId, PRESIDING_OFFICER_DESIGNATION_ID);
+        return PresidingOfficerDesignationSupport.isPresidingOfficer(posting);
     }
 
     public boolean isClerk(EmployeePosting posting) {

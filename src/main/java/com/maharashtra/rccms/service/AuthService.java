@@ -13,6 +13,7 @@ import com.maharashtra.rccms.repository.EmployeeRepository;
 import com.maharashtra.rccms.repository.PartyInPersonRegistrationRepository;
 import com.maharashtra.rccms.security.JwtService;
 import com.maharashtra.rccms.util.EmployeeLoginSupport;
+import com.maharashtra.rccms.util.PresidingOfficerDesignationSupport;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -108,8 +109,10 @@ public class AuthService {
         Long officeId = posting != null && posting.getOffice() != null ? posting.getOffice().getId() : null;
         String officeName = posting != null && posting.getOffice() != null ? posting.getOffice().getName() : null;
         String officeCode = posting != null && posting.getOffice() != null ? posting.getOffice().getOfficeCode() : null;
+        boolean presidingOfficer = PresidingOfficerDesignationSupport.isPresidingOfficer(posting);
+        String officerActorRole = presidingOfficer ? "PRESIDING_OFFICER" : "CLERK";
         return buildAuthResponse(officerLoginId, employee.getFullName(), UserRole.OFFICER, designationId, designationName,
-                officeId, officeName, officeCode);
+                officeId, officeName, officeCode, null, presidingOfficer, officerActorRole);
     }
 
     private void assertPassword(String rawPassword, String passwordHash) {
@@ -149,12 +152,29 @@ public class AuthService {
             String officeName,
             String officeCode
     ) {
+        return buildAuthResponse(loginId, displayName, role, designationId, designationName, officeId, officeName, officeCode,
+                null, null, null);
+    }
+
+    private AuthResponse buildAuthResponse(
+            String loginId,
+            String displayName,
+            UserRole role,
+            Long designationId,
+            String designationName,
+            Long officeId,
+            String officeName,
+            String officeCode,
+            String barEnrollmentNumber,
+            Boolean presidingOfficer,
+            String officerActorRole
+    ) {
         String token = jwtService.generateToken(loginId, Map.of(
                 "role", role.name(),
                 "name", displayName
         ));
         return new AuthResponse(token, "Bearer", role.name(), displayName, designationId, designationName,
-                officeId, officeName, officeCode, null);
+                officeId, officeName, officeCode, barEnrollmentNumber, presidingOfficer, officerActorRole);
     }
 
     private static String trimToNull(String value) {

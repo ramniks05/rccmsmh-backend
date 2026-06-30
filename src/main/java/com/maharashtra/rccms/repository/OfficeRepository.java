@@ -11,6 +11,8 @@ public interface OfficeRepository extends JpaRepository<Office, Long> {
 
     List<Office> findByDepartmentIdAndOfficeTypeIdOrderByNameAsc(Long departmentId, Long officeTypeId);
 
+    List<Office> findByDepartmentIdOrderByNameAsc(Long departmentId);
+
     List<Office> findByOfficeType_BoundaryLevelOrderByNameAsc(String boundaryLevel);
 
     List<Office> findByDepartmentIdAndOfficeType_BoundaryLevelOrderByNameAsc(Long departmentId, String boundaryLevel);

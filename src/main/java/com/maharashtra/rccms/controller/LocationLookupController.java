@@ -3,21 +3,17 @@ package com.maharashtra.rccms.controller;
 import com.maharashtra.rccms.dto.BoundaryMasterResponse;
 import com.maharashtra.rccms.dto.OfficeResponse;
 import com.maharashtra.rccms.dto.PincodeLookupResponse;
-import com.maharashtra.rccms.model.master.BoundaryLevel;
 import com.maharashtra.rccms.model.master.District;
 import com.maharashtra.rccms.model.master.Division;
-import com.maharashtra.rccms.model.master.Office;
-import com.maharashtra.rccms.model.master.OfficeType;
 import com.maharashtra.rccms.model.master.State;
 import com.maharashtra.rccms.model.master.Taluka;
 import com.maharashtra.rccms.model.master.Village;
 import com.maharashtra.rccms.repository.DistrictRepository;
 import com.maharashtra.rccms.repository.DivisionRepository;
-import com.maharashtra.rccms.repository.OfficeRepository;
-import com.maharashtra.rccms.repository.OfficeTypeRepository;
 import com.maharashtra.rccms.repository.TalukaRepository;
 import com.maharashtra.rccms.repository.VillageRepository;
 import com.maharashtra.rccms.service.CoveredStateService;
+import com.maharashtra.rccms.service.OfficeLookupService;
 import com.maharashtra.rccms.service.PincodeLookupService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,29 +37,26 @@ public class LocationLookupController {
     private final DistrictRepository districtRepository;
     private final TalukaRepository talukaRepository;
     private final VillageRepository villageRepository;
-    private final OfficeRepository officeRepository;
-    private final OfficeTypeRepository officeTypeRepository;
     private final PincodeLookupService pincodeLookupService;
     private final CoveredStateService coveredStateService;
+    private final OfficeLookupService officeLookupService;
 
     public LocationLookupController(
             DivisionRepository divisionRepository,
             DistrictRepository districtRepository,
             TalukaRepository talukaRepository,
             VillageRepository villageRepository,
-            OfficeRepository officeRepository,
-            OfficeTypeRepository officeTypeRepository,
             PincodeLookupService pincodeLookupService,
-            CoveredStateService coveredStateService
+            CoveredStateService coveredStateService,
+            OfficeLookupService officeLookupService
     ) {
         this.divisionRepository = divisionRepository;
         this.districtRepository = districtRepository;
         this.talukaRepository = talukaRepository;
         this.villageRepository = villageRepository;
-        this.officeRepository = officeRepository;
-        this.officeTypeRepository = officeTypeRepository;
         this.pincodeLookupService = pincodeLookupService;
         this.coveredStateService = coveredStateService;
+        this.officeLookupService = officeLookupService;
     }
 
     /** Example: GET /api/lookups/states */
@@ -153,32 +146,31 @@ public class LocationLookupController {
         return villageRepository.findByTaluka_DistrictIdOrderByNameAsc(districtId);
     }
 
+    /**
+     * Office dropdown filtered by department, office type, and boundary hierarchy.
+     * Example: GET /api/lookups/offices?departmentId=1&officeTypeId=4&districtId=10&talukaId=100
+     */
     @GetMapping("/offices")
     public ResponseEntity<?> offices(
+            @RequestParam(name = "departmentId", required = false) Long departmentId,
             @RequestParam(name = "officeTypeId", required = false) Long officeTypeId,
             @RequestParam(name = "boundaryLevel", required = false) String boundaryLevel,
             @RequestParam(name = "level", required = false) String level,
-            @RequestParam(name = "departmentId", required = false) Long departmentId
+            @RequestParam(name = "stateId", required = false) Long stateId,
+            @RequestParam(name = "divisionId", required = false) Long divisionId,
+            @RequestParam(name = "divisionCode", required = false) String divisionCode,
+            @RequestParam(name = "districtId", required = false) Long districtId,
+            @RequestParam(name = "talukaId", required = false) Long talukaId
     ) {
         try {
-            List<Office> offices;
-            if (officeTypeId != null) {
-                offices = (departmentId == null)
-                        ? officeRepository.findByOfficeTypeIdOrderByNameAsc(officeTypeId)
-                        : officeRepository.findByDepartmentIdAndOfficeTypeIdOrderByNameAsc(
-                                departmentId, officeTypeId);
-            } else {
-                String normalizedLevel = resolveOfficeBoundaryLevel(null, boundaryLevel, level);
-                offices = (departmentId == null)
-                        ? officeRepository.findByOfficeType_BoundaryLevelOrderByNameAsc(normalizedLevel)
-                        : officeRepository.findByDepartmentIdAndOfficeType_BoundaryLevelOrderByNameAsc(
-                                departmentId, normalizedLevel);
+            String resolvedBoundaryLevel = boundaryLevel != null && !boundaryLevel.isBlank() ? boundaryLevel : level;
+            if (officeTypeId == null && resolvedBoundaryLevel == null) {
+                throw new IllegalArgumentException("officeTypeId or boundaryLevel is required");
             }
-
-            List<OfficeResponse> items = offices.stream()
-                    .filter(this::officeInCoveredState)
-                    .map(OfficeResponse::from)
-                    .toList();
+            List<OfficeResponse> items = officeLookupService.listOfficeResponses(
+                    departmentId, officeTypeId, resolvedBoundaryLevel,
+                    stateId, divisionId, divisionCode, districtId, talukaId
+            );
             return ResponseEntity.ok(items);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -195,31 +187,6 @@ public class LocationLookupController {
         } catch (IllegalStateException ex) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", ex.getMessage()));
         }
-    }
-
-    private boolean officeInCoveredState(Office office) {
-        State state = office.getState();
-        if (state != null) {
-            return coveredStateService.isCoveredStateEntity(state);
-        }
-        String stateLgdCode = office.getStateLgdCode();
-        return stateLgdCode == null || coveredStateService.matchesCoveredStateLgdCode(stateLgdCode);
-    }
-
-    private String resolveOfficeBoundaryLevel(Long officeTypeId, String boundaryLevel, String legacyLevel) {
-        if (officeTypeId != null) {
-            OfficeType officeType = officeTypeRepository.findById(officeTypeId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid officeTypeId"));
-            if (officeType.getBoundaryLevel() == null || officeType.getBoundaryLevel().isBlank()) {
-                throw new IllegalArgumentException("Selected office type has no boundaryLevel configured");
-            }
-            return BoundaryLevel.normalize(officeType.getBoundaryLevel());
-        }
-        String raw = boundaryLevel != null && !boundaryLevel.isBlank() ? boundaryLevel : legacyLevel;
-        if (raw == null || raw.isBlank()) {
-            throw new IllegalArgumentException("officeTypeId or boundaryLevel is required");
-        }
-        return BoundaryLevel.normalize(raw);
     }
 
     private static String normalizeDivisionCode(String divisionCode) {

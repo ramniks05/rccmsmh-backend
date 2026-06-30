@@ -11,9 +11,13 @@ public class AuthResponse {
     private final String officeName;
     private final String officeCode;
     private final String barEnrollmentNumber;
+    /** True when current posting designation is Presiding Officer (DySLR). */
+    private final Boolean presidingOfficer;
+    /** PRESIDING_OFFICER or CLERK for officer login; null for other roles. */
+    private final String officerActorRole;
 
     public AuthResponse(String accessToken, String tokenType, String role, String displayName) {
-        this(accessToken, tokenType, role, displayName, null, null, null, null, null, null);
+        this(accessToken, tokenType, role, displayName, null, null, null, null, null, null, null, null);
     }
 
     public AuthResponse(
@@ -27,7 +31,7 @@ public class AuthResponse {
             String officeName,
             String officeCode
     ) {
-        this(accessToken, tokenType, role, displayName, designationId, designationName, officeId, officeName, officeCode, null);
+        this(accessToken, tokenType, role, displayName, designationId, designationName, officeId, officeName, officeCode, null, null, null);
     }
 
     public AuthResponse(
@@ -42,6 +46,24 @@ public class AuthResponse {
             String officeCode,
             String barEnrollmentNumber
     ) {
+        this(accessToken, tokenType, role, displayName, designationId, designationName, officeId, officeName, officeCode,
+                barEnrollmentNumber, null, null);
+    }
+
+    public AuthResponse(
+            String accessToken,
+            String tokenType,
+            String role,
+            String displayName,
+            Long designationId,
+            String designationName,
+            Long officeId,
+            String officeName,
+            String officeCode,
+            String barEnrollmentNumber,
+            Boolean presidingOfficer,
+            String officerActorRole
+    ) {
         this.accessToken = accessToken;
         this.tokenType = tokenType;
         this.role = role;
@@ -52,6 +74,8 @@ public class AuthResponse {
         this.officeName = officeName;
         this.officeCode = officeCode;
         this.barEnrollmentNumber = barEnrollmentNumber;
+        this.presidingOfficer = presidingOfficer;
+        this.officerActorRole = officerActorRole;
     }
 
     public String getAccessToken() {
@@ -92,5 +116,13 @@ public class AuthResponse {
 
     public String getBarEnrollmentNumber() {
         return barEnrollmentNumber;
+    }
+
+    public Boolean getPresidingOfficer() {
+        return presidingOfficer;
+    }
+
+    public String getOfficerActorRole() {
+        return officerActorRole;
     }
 }

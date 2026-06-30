@@ -23,6 +23,7 @@ import com.maharashtra.rccms.model.caseflow.CaseOrderSheetHistory;
 import com.maharashtra.rccms.model.filing.*;
 import com.maharashtra.rccms.model.master.*;
 import com.maharashtra.rccms.repository.*;
+import com.maharashtra.rccms.util.PresidingOfficerDesignationSupport;
 import com.maharashtra.rccms.workflow.WorkflowAction;
 import com.maharashtra.rccms.workflow.config.CaseWorkflowDefinition;
 import org.springframework.security.core.Authentication;
@@ -43,7 +44,6 @@ import java.util.stream.Collectors;
 @Service
 @SuppressWarnings("null")
 public class FilingApplicationService {
-    private static final long PRESIDING_OFFICER_DESIGNATION_ID = 1L;
     private static final String PINCODE_REGEX = "^\\d{6}$";
     private static final String MOBILE_REGEX = "^\\d{10}$";
     private static final String DOB_REGEX = "^\\d{4}-\\d{2}-\\d{2}$";
@@ -256,8 +256,7 @@ public class FilingApplicationService {
         String login = normalizeLogin(principal.getName());
 
         EmployeePosting posting = resolveOfficerCurrentPosting(login);
-        Long designationId = posting.getDesignation() != null ? posting.getDesignation().getId() : null;
-        if (!Objects.equals(designationId, PRESIDING_OFFICER_DESIGNATION_ID)) {
+        if (!isPresidingOfficer(posting)) {
             throw new IllegalArgumentException("Only Presiding Officer can approve applications.");
         }
 
@@ -1906,8 +1905,7 @@ public class FilingApplicationService {
     }
 
     private boolean isPresidingOfficer(EmployeePosting posting) {
-        Long designationId = posting.getDesignation() != null ? posting.getDesignation().getId() : null;
-        return Objects.equals(designationId, PRESIDING_OFFICER_DESIGNATION_ID);
+        return PresidingOfficerDesignationSupport.isPresidingOfficer(posting);
     }
 
     private boolean isAssignedToCurrentOfficerRole(FilingApplication app, boolean officerIsPo) {
@@ -1917,9 +1915,10 @@ public class FilingApplicationService {
         if (Boolean.TRUE.equals(app.getPoApproved()) || Boolean.TRUE.equals(app.getPoRejected())) {
             return false;
         }
-        // Simplified office-level visibility: all pending submitted applications
-        // for the officer's office should be visible, regardless of current stage.
-        return true;
+        if (Boolean.TRUE.equals(app.getForwardedToPo())) {
+            return officerIsPo;
+        }
+        return !officerIsPo;
     }
 
     private FilingApplication resolveOfficerScopedApplication(Long applicationId, Long officeId) {
@@ -3187,8 +3186,7 @@ public class FilingApplicationService {
         try {
             Employee employee = resolveOfficerEmployee(login);
             return employeePostingRepository.findFirstByEmployeeIdAndToDateIsNull(employee.getId())
-                    .map(posting -> posting.getDesignation() != null
-                            && Objects.equals(posting.getDesignation().getId(), PRESIDING_OFFICER_DESIGNATION_ID)
+                    .map(posting -> PresidingOfficerDesignationSupport.isPresidingOfficer(posting)
                             ? "PRESIDING_OFFICER"
                             : "CLERK")
                     .orElse("CLERK");

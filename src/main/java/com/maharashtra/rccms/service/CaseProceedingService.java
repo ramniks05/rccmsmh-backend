@@ -1360,16 +1360,14 @@ public class CaseProceedingService {
                 .orElseThrow(() -> new IllegalArgumentException("Current posting not found for officer."));
     }
 
-    private static void assertPo(EmployeePosting posting) {
-        Long designationId = posting.getDesignation() != null ? posting.getDesignation().getId() : null;
-        if (!Objects.equals(designationId, 1L)) {
+    private void assertPo(EmployeePosting posting) {
+        if (!workflowPolicyService.isPo(posting)) {
             throw new IllegalArgumentException("Only Presiding Officer can perform this action.");
         }
     }
 
-    private static void assertClerk(EmployeePosting posting) {
-        Long designationId = posting.getDesignation() != null ? posting.getDesignation().getId() : null;
-        if (Objects.equals(designationId, 1L)) {
+    private void assertClerk(EmployeePosting posting) {
+        if (workflowPolicyService.isPo(posting)) {
             throw new IllegalArgumentException("Only clerk can perform this action.");
         }
     }
